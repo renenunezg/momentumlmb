@@ -1,0 +1,26 @@
+venue_id,name,city,lat,lon,elevation_m,tz,source
+2701,Walmart Park,Monterrey,25.7185,-100.3158,529,America/Monterrey,enwiki coords; Open-Meteo DEM
+2957,Toros Mobil Park,Tijuana,32.4832,-116.9175,100,America/Tijuana,eswiki coords; Open-Meteo DEM
+5340,Estadio Alfredo Harp Helú,Mexico City,19.4040,-99.0855,2229,America/Mexico_City,enwiki coords; Open-Meteo DEM
+2956,Estadio de la Revolución,Torreón,25.5396,-103.4292,1124,America/Monterrey,enwiki coords; Open-Meteo DEM
+2958,Estadio Beto Ávila,Veracruz,19.1651,-96.1227,9,America/Mexico_City,enwiki coords; Open-Meteo DEM
+2869,Estadio Hermanos Serdán,Puebla,19.0754,-98.1649,2220,America/Mexico_City,enwiki coords; Open-Meteo DEM
+2950,Estadio Kickapoo Lucky Eagle,Monclova,26.9071,-101.4440,613,America/Monterrey,eswiki coords; Open-Meteo DEM
+4710,Estadio Panamericano de los Charros,Zapopan,20.7274,-103.3815,1560,America/Mexico_City,enwiki coords; Open-Meteo DEM
+5320,Estadio Domingo Santana,León,21.1455,-101.6595,1817,America/Mexico_City,enwiki coords; Open-Meteo DEM
+2953,Parque Francisco I. Madero,Saltillo,25.4336,-100.9790,1554,America/Monterrey,eswiki coords; Open-Meteo DEM
+2929,Estadio Alberto Romo Chávez,Aguascalientes,21.8800,-102.2740,1886,America/Mexico_City,OSM coords; Open-Meteo DEM
+5321,Estadio Francisco Villa,Durango,24.0158,-104.6897,1916,America/Mexico_City,enwiki coords; Open-Meteo DEM
+2951,Estadio Yu'Va,Oaxaca,17.0698,-96.7133,1565,America/Mexico_City,eswiki coords; Open-Meteo DEM
+3929,Estadio Beto Ávila (Cancún),Cancún,21.1520,-86.8363,5,America/Cancun,API coords; Open-Meteo DEM
+2959,Parque de Beisbol Kukulcán,Mérida,20.9412,-89.5960,10,America/Merida,enwiki coords; Open-Meteo DEM
+2949,Estadio Nelson Barrera Romellón,Campeche,19.8458,-90.5169,4,America/Merida,enwiki coords; Open-Meteo DEM
+2955,Parque Centenario 27 de Febrero,Villahermosa,17.9767,-92.9442,21,America/Merida,eswiki coords; Open-Meteo DEM
+5330,Uni-Trade Stadium,"Laredo, TX",27.5540,-99.4554,155,America/Chicago,enwiki coords; Open-Meteo DEM
+3410,Parque la Junta,Nuevo Laredo,27.4776,-99.4911,125,America/Chicago,OSM coords; Open-Meteo DEM
+6070,Estadio Conspiradores,Huimilpan,20.4244,-100.3013,2126,America/Mexico_City,enwiki coords; Open-Meteo DEM; unconfirmed
+3210,Estadio Chihuahua,Chihuahua,28.6256,-106.0221,1434,America/Chihuahua,OSM coords; Open-Meteo DEM
+6081,Estadio Víctor Cervera Pacheco,Kanasín,20.9347,-89.5578,12,America/Merida,town centre coords (stadium not found); Open-Meteo DEM
+6007,Estadio Ángel Toledo Meza,Macuspana,17.7600,-92.5983,13,America/Mexico_City,town centre coords (stadium not found); Open-Meteo DEM
+3969,Estadio Nuevo Laredo,Nuevo Laredo,27.4802,-99.5918,139,America/Monterrey,eswiki coords; Open-Meteo DEM
+3909,Estadio Adolfo López Mateos,Reynosa,26.0788,-98.3123,51,America/Matamoros,enwiki coords; Open-Meteo DEM
