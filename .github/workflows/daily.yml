@@ -1,0 +1,48 @@
+# Scores the day once the training run succeeds.
+name: daily
+on:
+  workflow_run:
+    workflows: [train]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: lmb-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry
+      - run: poetry sync --no-interaction
+      - name: Restore data caches
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: lmb-cache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            lmb-cache-${{ runner.os }}-
+      - name: Restore the current bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: artifacts/current
+          key: lmb-bundle-${{ runner.os }}-none
+          restore-keys: |
+            lmb-bundle-${{ runner.os }}-
+          fail-on-cache-miss: true
+      - name: Run
+        run: poetry run python -m backend score
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

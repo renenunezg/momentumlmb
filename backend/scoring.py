@@ -55,10 +55,11 @@ class Context:
 def games_to_score(games: pd.DataFrame, now: datetime, freeze_started: bool) -> pd.DataFrame:
     """Games still open for a forecast. With freeze_started, a game whose first
     pitch has passed, or whose status says it began, is left alone."""
-    open_games = games[~games["status"].isin(FINISHED | {"Cancelled", "Postponed", "Forfeit"})]
-    if freeze_started:
-        open_games = open_games[open_games["start_time_utc"] > pd.Timestamp(now)]
-    return open_games
+    playable = games[~games["status"].isin({"Cancelled", "Postponed", "Forfeit"})]
+    if not freeze_started:  # replays of past dates only
+        return playable
+    open_games = playable[~playable["status"].isin(FINISHED)]
+    return open_games[open_games["start_time_utc"] > pd.Timestamp(now)]
 
 
 def lineup_hash(lineups: dict[str, list[int]]) -> str:

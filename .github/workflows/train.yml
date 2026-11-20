@@ -1,0 +1,43 @@
+# Daily fit of the player skills and simulator tables on everything before
+# today. Off-season: the cron stays commented out until spring training (see
+# AGENTS.md); dispatch by hand meanwhile.
+name: train
+on:
+  # schedule:  # off-season
+  #   - cron: "0 13 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: lmb-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry
+      - run: poetry sync --no-interaction
+      - name: Restore data caches
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: lmb-cache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            lmb-cache-${{ runner.os }}-
+      - name: Fit
+        run: poetry run python -m backend train
+      - name: Save the bundle
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/current
+          key: lmb-bundle-${{ runner.os }}-${{ github.run_id }}
