@@ -32,9 +32,9 @@ import pymc as pm
 from backend.etl.pa_frame import OUTCOMES
 from backend.skills.common import (
     K_FREE,
+    MONTHS,
     NON_REF_IDX,
     NON_REF_LABELS,
-    MONTHS,
     REF_IDX,
     ActorIndex,
     encode_outcomes,
@@ -189,4 +189,13 @@ def fit(
     return idata, meta, time.time() - t0
 
 
-GATE_VARS = ("intercept_mu", "intercept_tau", "intercept", "month_effect", "sigma_pitcher", "elevation_slope", "park_sigma", "park_log")
+GATE_VARS = (
+    "intercept_mu",
+    "intercept_tau",
+    "intercept",
+    "month_effect",
+    "sigma_pitcher",
+    "elevation_slope",
+    "park_sigma",
+    "park_log",
+)

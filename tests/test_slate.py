@@ -59,3 +59,16 @@ def test_lost_market_gets_no_pick_and_no_replacement():
     other = choose_pick(4, outsider["home"], outsider["away"], 0.5, 0.5, slate, ready=True, picks_enabled=True)
     assert lost is None
     assert other is None
+
+
+def test_slate_ranked_without_quotes_is_not_stored():
+    store = MemorySlates()
+    now = FIRST_PITCH - timedelta(minutes=30)
+    unpriced = [{"game_pk": pk, "home": None, "away": None} for pk in range(1, 7)]
+    assert resolve_slate(DAY, now, [FIRST_PITCH], unpriced, store) is None
+    assert store.get(DAY) is None
+    assert sorted(resolve_slate(DAY, now, [FIRST_PITCH], [_candidate(pk, 0.5, 0.02) for pk in range(1, 4)], store)) == [
+        1,
+        2,
+        3,
+    ]

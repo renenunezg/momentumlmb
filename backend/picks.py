@@ -51,6 +51,8 @@ def resolve_slate(
     if not start_times or now < slate_rank_time(start_times):
         return None
     slate = rank_slate(candidates)
+    if not slate:  # no market priced yet (Kalshi down or not listed): rank again next refresh
+        return None
     store.put(day, now, slate)
     return slate
 

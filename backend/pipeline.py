@@ -49,8 +49,8 @@ def score_and_publish(day: date) -> None:
     games = fetch_games(day - timedelta(days=3), day + timedelta(days=1))
     publish.upsert_games(games)
     rows, quotes = score(day, slates=publish.DbSlates())
-    written = publish.publish(rows)
     closes = publish.write_closes(quotes, games[games.official_date == day], datetime.now(UTC))
+    written = publish.publish(rows)
     print(f"{day}: {len(rows)} rows scored, {written} written, {len(quotes)} quotes seen, {closes} closes captured")
 
 

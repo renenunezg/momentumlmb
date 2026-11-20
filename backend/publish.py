@@ -131,8 +131,12 @@ class DryRunSlates:
         self.rows[day] = game_pks
 
 
-COMPARED = ("win_prob", "sim_win_prob", "market_prob", "kalshi_bid", "kalshi_ask", "expected_runs", "lineup_source",
-            "lineup_hash", "prediction_context")  # fmt: skip
+COMPARED = ("date", "start_time", "win_prob", "sim_win_prob", "market_prob", "kalshi_bid", "kalshi_ask",
+            "expected_runs", "lineup_source", "lineup_hash", "prediction_context")  # fmt: skip
+# Rows for games starting within this margin are dropped before writing, so a
+# game whose first pitch passes during the refresh is skipped instead of making
+# the freeze trigger roll back every other game's write.
+START_MARGIN = timedelta(seconds=60)
 
 
 def _comparable(row: dict) -> tuple:
@@ -141,6 +145,10 @@ def _comparable(row: dict) -> tuple:
         v = row[c]
         if c == "prediction_context":
             v = json.dumps(v if isinstance(v, dict) else json.loads(v), sort_keys=True)
+        elif c == "start_time":
+            v = None if v is None else pd.Timestamp(v).tz_convert("UTC").isoformat()
+        elif c == "date":
+            v = str(v)
         elif v is not None and not isinstance(v, str):
             v = round(float(v), 4)
         out.append(v)
@@ -150,6 +158,7 @@ def _comparable(row: dict) -> tuple:
 def publish(rows: list[dict]) -> int:
     """Upsert the date's forecasts for unstarted games, writing only games whose
     forecast changed since the last run (keeps database writes to a minimum).
+    Rows for games that started (or start within START_MARGIN) are dropped.
     Raises if a row's date is not its game's official date. Returns the number
     of rows written."""
     if not rows:
@@ -160,11 +169,17 @@ def publish(rows: list[dict]) -> int:
     values = ", ".join(f":{c}" for c in FORECAST_COLUMNS)
     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in FORECAST_COLUMNS if c not in ("game_pk", "team"))
     with get_engine().begin() as conn:
-        official = dict(
-            conn.execute(text("SELECT game_pk, game_date FROM lmb.games WHERE game_pk = ANY(:pks)"), {"pks": game_pks})
-            .tuples()
-            .all()
-        )
+        games = conn.execute(
+            text(
+                "SELECT game_pk, game_date, (start_time IS NULL OR start_time <= clock_timestamp() + :margin "
+                "OR status IN ('Live', 'In Progress', 'Final', 'Completed Early', 'Game Over')) AS frozen "
+                "FROM lmb.games WHERE game_pk = ANY(:pks)"
+            ),
+            {"pks": game_pks, "margin": START_MARGIN},
+        ).all()
+        official = {g.game_pk: g.game_date for g in games}
+        frozen = {g.game_pk for g in games if g.frozen}
+        rows = [r for r in rows if r["game_pk"] not in frozen]
         for r in rows:
             if official.get(r["game_pk"]) != r["date"]:
                 raise RuntimeError(f"Game {r['game_pk']} official date {official.get(r['game_pk'])} != {r['date']}")

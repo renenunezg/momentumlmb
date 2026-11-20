@@ -86,7 +86,10 @@ def _quotes_for(day: date, games: pd.DataFrame) -> dict[int, tuple[kalshi.Quote,
     out = {}
     for pk, kg in matched.items():
         g = games[games.game_pk == pk].iloc[0]
-        out[pk] = kalshi.quotes(kg, int(g.home_team_id), int(g.away_team_id))
+        try:
+            out[pk] = kalshi.quotes(kg, int(g.home_team_id), int(g.away_team_id))
+        except Exception as error:  # noqa: BLE001  (one delisted market costs that game its pick, not the run)
+            print(f"game {pk}: Kalshi market unavailable: {error}")
     return out
 
 
