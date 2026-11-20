@@ -43,9 +43,11 @@ def fit_all(
     draws: int = DRAWS,
     tune: int = TUNE,
     chains: int = CHAINS,
+    enforce_gate: bool = True,
 ) -> Path:
     """Fit on regular-season PAs before `through` and write pitcher.nc,
-    batter.nc, woba.json and diagnostics.json. Raises if any gate fails."""
+    batter.nc, woba.json and diagnostics.json. Raises if any gate fails, unless enforce_gate is off
+    (walk-forward evaluation records the miss and carries on)."""
     train = training_frame(pa, through, seasons_back)
     if train.empty:
         raise ValueError(f"No training PAs before {through}")
@@ -87,6 +89,6 @@ def fit_all(
             "all_gates_passed": passed,
         },
     )
-    if not passed:
+    if enforce_gate and not passed:
         raise RuntimeError(f"Skill fit failed its convergence gate; see {out_dir / 'diagnostics.json'}")
     return out_dir
