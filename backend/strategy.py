@@ -34,6 +34,7 @@ PICK_POLICY = "lmb-picks-v1"
 PICK_MIN_EV = -0.0125
 PICK_DAILY_MINIMUM = 3
 SLATE_LEAD = timedelta(minutes=60)
-# Set once by the 2026 holdout rule (Task 12): off if the sim is clearly worse
-# than the team-strength baseline.
-PICKS_ENABLED = False
+# Set once by the 2026 holdout rule, read 2026-11-20 (cache/holdout_2026.json): off if the sim is clearly
+# worse than the team-strength baseline. Sim log loss 0.6866 vs team strength 0.6963 on 997 games,
+# difference 90% interval [-0.0225, +0.0027], so picks are on.
+PICKS_ENABLED = True

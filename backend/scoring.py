@@ -93,10 +93,18 @@ def _quotes_for(day: date, games: pd.DataFrame) -> dict[int, tuple[kalshi.Quote,
     return out
 
 
+def _weather_for(games: pd.DataFrame) -> dict[int, float]:
+    try:
+        return forecast_for_games(games).set_index("game_pk").air_density.to_dict()
+    except Exception as error:  # noqa: BLE001  (no forecast means no weather shift, never a failed run)
+        print(f"Weather unavailable: {error}")
+        return {}
+
+
 def build_contexts(day: date, games: pd.DataFrame, pa: pd.DataFrame, workload: pd.DataFrame) -> list[Context]:
     starters = live.probables(day)
     throws = pa.groupby("pitcher").p_throws.agg(lambda s: s.mode().iloc[0]).to_dict()
-    weather = forecast_for_games(games).set_index("game_pk").air_density.to_dict() if strategy.WEATHER_HR_COEF else {}
+    weather = _weather_for(games) if strategy.WEATHER_HR_COEF else {}
     quotes = _quotes_for(day, games)
     contexts = []
     for _, g in games.iterrows():
