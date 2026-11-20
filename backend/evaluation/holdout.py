@@ -5,7 +5,9 @@ Populations, reported separately and never pooled:
 - all final 2026 games: sim vs home-field and team-strength baselines;
 - games with a matched BetExplorer close: sim (shifted, as published before
   anchoring) vs the de-vigged average close;
-- games with a matched 2026 Kalshi quote: sim vs the Kalshi midpoint.
+- games with a matched 2026 Kalshi quote: sim vs the Kalshi midpoint;
+- expected total runs on all final games (mean expected vs actual, squared
+  error), regular season and playoffs separately.
 The launch rule: picks are off if the 90% paired bootstrap interval of
 per-game log loss (sim minus team-strength) lies wholly above zero."""
 
@@ -23,6 +25,7 @@ from backend.evaluation.walkforward import Setting, outcomes, run
 from backend.markets.betexplorer import CLOSES
 from backend.markets.kalshi import KALSHI_2026
 from backend.markets.probs import devig_pair, logit, sigmoid
+from backend.weather import archive_for_games
 
 REPORT = CACHE_DIR / "holdout_2026.json"
 
@@ -45,8 +48,12 @@ def read_holdout() -> dict:
     if REPORT.exists():
         raise RuntimeError(f"The holdout was already read ({REPORT}); it is read once")
     setting = Setting(strategy.SEASONS_BACK, strategy.REFIT_EVERY_DAYS, strategy.WEATHER_HR_COEF)
-    forecasts = run(HOLDOUT_SEASON, setting)
     games = load_games(list(range(2021, HOLDOUT_SEASON + 1)))
+    weather = None
+    if strategy.WEATHER_HR_COEF:
+        season_games = games[(games.season == HOLDOUT_SEASON) & games.status.isin(["Final", "Completed Early"])]
+        weather = archive_for_games(season_games)
+    forecasts = run(HOLDOUT_SEASON, setting, weather=weather)
     history = games.merge(outcomes(list(range(2021, HOLDOUT_SEASON + 1)))[["game_pk", "home_win"]], on="game_pk")
     df = forecasts.merge(history, on="game_pk")
     df = df[df.home_score != df.away_score]
@@ -84,6 +91,20 @@ def read_holdout() -> dict:
             "kalshi",
         )
     )
+
+    runs = forecasts.merge(games[["game_pk", "game_type", "home_score", "away_score"]], on="game_pk")
+    runs["exp"] = runs.exp_home_runs + runs.exp_away_runs
+    runs["act"] = runs.home_score + runs.away_score
+    report["runs"] = [
+        {
+            "population": name,
+            "games": int(len(part)),
+            "mean_expected": float(part.exp.mean()),
+            "mean_actual": float(part.act.mean()),
+            "squared_error": float(((part.exp - part.act) ** 2).mean()),
+        }
+        for name, part in (("regular season", runs[runs.game_type == "R"]), ("playoffs", runs[runs.game_type != "R"]))
+    ]
 
     low, _ = team["log_loss_diff_ci90"]
     report["picks_enabled"] = not (low > 0)
