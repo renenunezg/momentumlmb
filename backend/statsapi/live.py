@@ -7,7 +7,8 @@ from backend.statsapi.client import get
 from backend.statsapi.league import LEAGUE_ID, sport_id_for
 
 
-def probables(day: date) -> dict[int, dict[str, int | None]]:
+def probables(day: date) -> dict[int, dict[str, dict | None]]:
+    """Probable starters per game and side as {"id", "name"}, or None."""
     payload = get(
         "/v1/schedule",
         sportId=sport_id_for(day.year),
@@ -18,9 +19,12 @@ def probables(day: date) -> dict[int, dict[str, int | None]]:
     out = {}
     for d in payload.get("dates", []):
         for g in d["games"]:
-            out[g["gamePk"]] = {
-                side: (g["teams"][side].get("probablePitcher") or {}).get("id") for side in ("home", "away")
-            }
+            out[g["gamePk"]] = {}
+            for side in ("home", "away"):
+                pitcher = g["teams"][side].get("probablePitcher")
+                out[g["gamePk"]][side] = (
+                    {"id": pitcher["id"], "name": pitcher.get("fullName")} if pitcher and pitcher.get("id") else None
+                )
     return out
 
 

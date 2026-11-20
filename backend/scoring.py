@@ -50,6 +50,7 @@ class Context:
     ready: bool
     home: kalshi.Quote | None
     away: kalshi.Quote | None
+    starters: dict[str, dict | None]  # side -> {"id", "name"} for the site's portraits
 
 
 def games_to_score(games: pd.DataFrame, now: datetime, freeze_started: bool) -> pd.DataFrame:
@@ -98,11 +99,13 @@ def build_contexts(day: date, games: pd.DataFrame, pa: pd.DataFrame, workload: p
     for _, g in games.iterrows():
         pk = int(g.game_pk)
         posted = live.posted_lineups(pk)
-        lineups, sources, queues, known = {}, [], {}, True
+        lineups, sources, queues, known, probable_by_side = {}, [], {}, True, {}
         for side in ("home", "away"):
             team_id = int(g[f"{side}_team_id"])
             roster = live.active_roster(team_id, day)
-            starter = (starters.get(pk) or {}).get(side)
+            probable = (starters.get(pk) or {}).get(side)
+            starter = probable["id"] if probable else None
+            probable_by_side[side] = probable
             if posted[side] is not None:
                 lineups[side], source = posted[side], "posted"
             else:
@@ -132,7 +135,7 @@ def build_contexts(day: date, games: pd.DataFrame, pa: pd.DataFrame, workload: p
         ready = known and sources == ["posted", "posted"] and queues["home"].usage_known and queues["away"].usage_known
         home_q, away_q = quotes.get(pk, (None, None))
         source = "posted" if sources == ["posted", "posted"] else "projected"
-        contexts.append(Context(g, inputs, source, lineup_hash(lineups), ready, home_q, away_q))
+        contexts.append(Context(g, inputs, source, lineup_hash(lineups), ready, home_q, away_q, probable_by_side))
     return contexts
 
 
@@ -191,8 +194,8 @@ def score(
         home_code, away_code = _team_code(int(c.game.home_team_id)), _team_code(int(c.game.away_team_id))
         if pick is not None:
             pick["team"] = home_code if pick["side"] == "home" else away_code
-        context = {"pick": pick} if pick else {}
-        context["slate"] = bool(slate and int(c.game.game_pk) in slate)
+        shared = {"pick": pick} if pick else {}
+        shared["slate"] = bool(slate and int(c.game.game_pk) in slate)
         for side, code, opp, runs, p, q in (
             ("home", home_code, away_code, result.home_runs, p_home, c.home),
             ("away", away_code, home_code, result.away_runs, 1 - p_home, c.away),
@@ -223,7 +226,7 @@ def score(
                     "lineup_source": c.lineup_source,
                     "lineup_hash": c.lineup_hash,
                     "prediction_updated_at": now,
-                    "prediction_context": context,
+                    "prediction_context": {**shared, "starter": c.starters.get(side)},
                 }
             )
         for q in (c.home, c.away):
