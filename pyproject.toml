@@ -31,12 +31,6 @@ dependencies = [
 [tool.poetry]
 package-mode = false
 
-[tool.poetry.group.scrape]
-optional = true
-
-[tool.poetry.group.scrape.dependencies]
-playwright = "^1.48"
-
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
 ruff = "^0.12"
