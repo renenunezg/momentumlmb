@@ -291,5 +291,10 @@ def build_pa_cache(seasons: list[int]) -> Path:
     return PA_DIR
 
 
-def load_pa(seasons: list[int]) -> pd.DataFrame:
-    return pd.concat([pd.read_parquet(PA_DIR / f"{s}.parquet") for s in seasons], ignore_index=True)
+def load_pa(seasons: list[int], missing_ok: bool = False) -> pd.DataFrame:
+    """Cached seasons; with missing_ok, seasons without a cache yet (a new
+    season before its first final game) are skipped."""
+    paths = [PA_DIR / f"{s}.parquet" for s in seasons]
+    if missing_ok:
+        paths = [p for p in paths if p.exists()]
+    return pd.concat([pd.read_parquet(p) for p in paths], ignore_index=True)

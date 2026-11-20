@@ -47,5 +47,10 @@ def build_workload_cache(seasons: list[int]) -> Path:
     return WORKLOAD_DIR
 
 
-def load_workload(seasons: list[int]) -> pd.DataFrame:
-    return pd.concat([pd.read_parquet(WORKLOAD_DIR / f"{s}.parquet") for s in seasons], ignore_index=True)
+def load_workload(seasons: list[int], missing_ok: bool = False) -> pd.DataFrame:
+    """Cached seasons; with missing_ok, seasons without a cache yet (a new
+    season before its first final game) are skipped."""
+    paths = [WORKLOAD_DIR / f"{s}.parquet" for s in seasons]
+    if missing_ok:
+        paths = [p for p in paths if p.exists()]
+    return pd.concat([pd.read_parquet(p) for p in paths], ignore_index=True)

@@ -94,3 +94,21 @@ def archive_for_games(games: pd.DataFrame) -> pd.DataFrame:
 def forecast_for_games(games: pd.DataFrame) -> pd.DataFrame:
     """Forecast weather at first pitch for upcoming games (up to 16 days out)."""
     return _at_first_pitch(games, FORECAST_URL)
+
+
+def venue_median_density() -> dict[int, float]:
+    """Each venue's median game-time air density over the cached seasons."""
+    from backend.etl.games import load_games
+
+    frames = [pd.read_parquet(p) for p in sorted(WEATHER_DIR.glob("*.parquet"))]
+    weather = pd.concat(frames, ignore_index=True)
+    seasons = sorted(int(p.stem) for p in WEATHER_DIR.glob("*.parquet"))
+    games = load_games(seasons)[["game_pk", "venue_id"]]
+    return weather.merge(games, on="game_pk").groupby("venue_id").air_density.median().to_dict()
+
+
+def hr_logit_shift(venue_id: int, air_density: float, coef: float) -> float:
+    """Home-run logit shift for air thinner (positive) or thicker than the
+    venue's usual, per 0.01 kg/m3."""
+    median = venue_median_density().get(venue_id)
+    return 0.0 if median is None else coef * (median - air_density) / 0.01
