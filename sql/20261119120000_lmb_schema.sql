@@ -36,53 +36,17 @@ CREATE TABLE lmb.games (
 );
 CREATE INDEX games_date_idx ON lmb.games (game_date);
 
-CREATE TABLE lmb.probable_starters (
-  game_pk integer NOT NULL REFERENCES lmb.games (game_pk),
-  side text NOT NULL CHECK (side IN ('home', 'away')),
-  pitcher_id integer NOT NULL,
-  pitcher_name text,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (game_pk, side)
-);
-
--- Pitcher appearances from final boxscores: the bullpen queue's workload and rest inputs.
-CREATE TABLE lmb.pitcher_workload (
-  game_pk integer NOT NULL,
-  game_date date NOT NULL,
-  team_id integer NOT NULL,
-  pitcher_id integer NOT NULL,
-  is_starter boolean NOT NULL,
-  appearance_order smallint NOT NULL,
-  outs smallint NOT NULL,
-  pitches smallint NOT NULL,
-  runs smallint NOT NULL,
-  PRIMARY KEY (game_pk, pitcher_id)
-);
-CREATE INDEX pitcher_workload_team_date_idx ON lmb.pitcher_workload (team_id, game_date);
-
--- Kalshi quotes, append-only, written only when a market's bid or ask changed. Prices in dollars (0 to 1).
-CREATE TABLE lmb.kalshi_quotes (
-  game_pk integer NOT NULL,
-  team_id integer NOT NULL,
-  ticker text NOT NULL,
-  yes_bid numeric(5, 4),
-  yes_ask numeric(5, 4),
-  fetched_at timestamptz NOT NULL,
-  PRIMARY KEY (ticker, fetched_at)
-);
-CREATE INDEX kalshi_quotes_game_idx ON lmb.kalshi_quotes (game_pk);
-
-CREATE FUNCTION lmb.refuse_quote_change() RETURNS trigger
+CREATE FUNCTION lmb.refuse_change() RETURNS trigger
 LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN
-  RAISE EXCEPTION 'kalshi_quotes is append-only (%)', TG_OP;
+  RAISE EXCEPTION '% is append-only (%)', TG_TABLE_NAME, TG_OP;
 END $$;
-CREATE TRIGGER refuse_quote_change BEFORE UPDATE OR DELETE ON lmb.kalshi_quotes
-  FOR EACH ROW EXECUTE FUNCTION lmb.refuse_quote_change();
-CREATE TRIGGER refuse_truncate BEFORE TRUNCATE ON lmb.kalshi_quotes
-  FOR EACH STATEMENT EXECUTE FUNCTION lmb.refuse_truncate();
 
--- One closing Kalshi quote per game: the last quote fetched before first pitch. Write-once, pregame only, on time.
+-- Starters, lineups, workloads and the quote stream stay in the pipeline's own caches: the database holds only
+-- what the site shows or grading needs (the shared project is near its size budget).
+
+-- One closing Kalshi quote per game: the last quote the refresh job saw before first pitch. Write-once, pregame
+-- only, on time.
 CREATE TABLE lmb.closing_lines (
   game_pk integer PRIMARY KEY,
   season integer NOT NULL,
@@ -135,7 +99,7 @@ CREATE TABLE lmb.model_outputs (
   expected_runs_p10 double precision,
   expected_runs_p50 double precision,
   expected_runs_p90 double precision,
-  runs_hist jsonb NOT NULL,
+  runs_hist real[] NOT NULL,
   lineup_source text NOT NULL,
   lineup_hash text,
   prediction_updated_at timestamptz NOT NULL,
@@ -168,33 +132,40 @@ CREATE TRIGGER refuse_started_forecast_write BEFORE INSERT OR UPDATE OR DELETE O
 CREATE TRIGGER refuse_truncate BEFORE TRUNCATE ON lmb.model_outputs_season
   FOR EACH STATEMENT EXECUTE FUNCTION lmb.refuse_truncate();
 
--- Compact append-only history of every published forecast version.
+-- Compact append-only history of the pick: a row when a game is first published and whenever its pick (team,
+-- tier or price) changes before first pitch. The frozen season row is the full record; this shows how the pick
+-- moved. About 60 bytes a row, one or two rows a game.
 CREATE TABLE lmb.forecast_history (
   game_pk integer NOT NULL,
   team text NOT NULL,
-  date date NOT NULL,
   published_at timestamptz NOT NULL,
-  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  win_prob double precision,
-  expected_runs double precision,
-  kalshi_ask numeric(5, 4),
-  pick jsonb,
-  row_md5 text NOT NULL
+  win_prob real NOT NULL,
+  pick_team text,
+  pick_tier text,
+  pick_price real
 );
 CREATE INDEX forecast_history_game_idx ON lmb.forecast_history (game_pk);
 
 CREATE FUNCTION lmb.record_forecast_history() RETURNS trigger
 LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN
-  INSERT INTO lmb.forecast_history (game_pk, team, date, published_at, win_prob, expected_runs, kalshi_ask, pick, row_md5)
-  VALUES (NEW.game_pk, NEW.team, NEW.date, NEW.prediction_updated_at, NEW.win_prob, NEW.expected_runs,
-          NEW.kalshi_ask, NEW.prediction_context -> 'pick', md5(row_to_json(NEW)::text));
+  IF NOT NEW.is_home THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'INSERT'
+     OR (NEW.prediction_context #>> '{pick,team}', NEW.prediction_context #>> '{pick,tier}', NEW.prediction_context #>> '{pick,price}')
+        IS DISTINCT FROM
+        (OLD.prediction_context #>> '{pick,team}', OLD.prediction_context #>> '{pick,tier}', OLD.prediction_context #>> '{pick,price}') THEN
+    INSERT INTO lmb.forecast_history (game_pk, team, published_at, win_prob, pick_team, pick_tier, pick_price)
+    VALUES (NEW.game_pk, NEW.team, NEW.prediction_updated_at, NEW.win_prob, NEW.prediction_context #>> '{pick,team}',
+            NEW.prediction_context #>> '{pick,tier}', (NEW.prediction_context #>> '{pick,price}')::real);
+  END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER record_forecast_history AFTER INSERT OR UPDATE ON lmb.model_outputs_season
   FOR EACH ROW EXECUTE FUNCTION lmb.record_forecast_history();
-CREATE TRIGGER refuse_quote_change BEFORE UPDATE OR DELETE ON lmb.forecast_history
-  FOR EACH ROW EXECUTE FUNCTION lmb.refuse_quote_change();
+CREATE TRIGGER refuse_change BEFORE UPDATE OR DELETE ON lmb.forecast_history
+  FOR EACH ROW EXECUTE FUNCTION lmb.refuse_change();
 
 -- The daily minimum slate: ranked once per date, 60 minutes before the date's first scheduled first pitch.
 CREATE TABLE lmb.pick_slates (
@@ -277,7 +248,7 @@ WHERE m.is_home AND m.prediction_context ? 'pick';
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['games', 'probable_starters', 'pitcher_workload', 'kalshi_quotes', 'closing_lines',
+  FOREACH t IN ARRAY ARRAY['games', 'closing_lines',
                            'model_outputs', 'model_outputs_season', 'forecast_history', 'pick_slates',
                            'model_evaluation', 'model_calibration'] LOOP
     EXECUTE format('ALTER TABLE lmb.%I ENABLE ROW LEVEL SECURITY', t);

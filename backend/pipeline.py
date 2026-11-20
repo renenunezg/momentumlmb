@@ -4,13 +4,11 @@ import shutil
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
-
 from backend import strategy
 from backend.config import ARTIFACTS_DIR
 from backend.etl.games import build_games_cache, fetch_games
 from backend.etl.pa_frame import build_pa_cache, load_pa
-from backend.etl.workload import build_workload_cache, load_workload
+from backend.etl.workload import build_workload_cache
 from backend.scoring import CURRENT_BUNDLE, score
 
 
@@ -50,13 +48,9 @@ def score_and_publish(day: date) -> None:
 
     games = fetch_games(day - timedelta(days=3), day + timedelta(days=1))
     publish.upsert_games(games)
-    workload = load_workload([day.year], missing_ok=True)
-    if not workload.empty:
-        publish.upsert_workload(workload[pd.to_datetime(workload.official_date).dt.date >= day - timedelta(days=3)])
     rows, quotes = score(day, slates=publish.DbSlates())
-    publish.record_quotes(quotes)
     publish.publish(rows)
-    closes = publish.capture_closes(datetime.now(UTC))
+    closes = publish.write_closes(quotes, games[games.official_date == day], datetime.now(UTC))
     print(f"{day}: published {len(rows)} rows, {len(quotes)} quotes seen, {closes} closes captured")
 
 

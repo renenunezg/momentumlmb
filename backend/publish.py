@@ -17,7 +17,8 @@ FORECAST_COLUMNS = [
     "expected_runs_p50", "expected_runs_p90", "runs_hist", "lineup_source", "lineup_hash",
     "prediction_updated_at", "prediction_context",
 ]  # fmt: skip
-CLOSE_WINDOW = timedelta(minutes=20)
+# The refresh job runs every 15 minutes, so the last run before first pitch falls inside this window.
+CLOSE_WINDOW = timedelta(minutes=16)
 
 
 def _team_code(team_id: int) -> str:
@@ -68,98 +69,37 @@ def upsert_games(games: pd.DataFrame) -> None:
         )
 
 
-def upsert_workload(workload: pd.DataFrame) -> None:
-    rows = [
-        {
-            "game_pk": int(r.game_pk),
-            "game_date": r.official_date,
-            "team_id": int(r.team_id),
-            "pitcher_id": int(r.pitcher_id),
-            "is_starter": bool(r.is_starter),
-            "appearance_order": int(r.order),
-            "outs": int(r.outs),
-            "pitches": int(r.pitches),
-            "runs": int(r.runs),
-        }
-        for r in workload.itertuples(index=False)
-    ]
-    if not rows:
-        return
-    with get_engine().begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO lmb.pitcher_workload VALUES (:game_pk, :game_date, :team_id, :pitcher_id, :is_starter,
-                  :appearance_order, :outs, :pitches, :runs)
-                ON CONFLICT (game_pk, pitcher_id) DO NOTHING
-                """
-            ),
-            rows,
-        )
-
-
-def record_quotes(quotes: list[tuple[int, Quote]]) -> None:
-    """Append a quote only when its bid or ask changed since the ticker's last row."""
-    if not quotes:
-        return
-    with get_engine().begin() as conn:
-        last = {
-            r.ticker: (r.yes_bid, r.yes_ask)
-            for r in conn.execute(
-                text(
-                    """
-                    SELECT DISTINCT ON (ticker) ticker, yes_bid, yes_ask FROM lmb.kalshi_quotes
-                    WHERE ticker = ANY(:tickers) ORDER BY ticker, fetched_at DESC
-                    """
-                ),
-                {"tickers": [q.ticker for _, q in quotes]},
-            )
-        }
-        rows = []
-        for game_pk, q in quotes:
-            prev = last.get(q.ticker)
-            current = (q.yes_bid, q.yes_ask)
-            if prev is not None and tuple(None if v is None else float(v) for v in prev) == current:
-                continue
-            rows.append(
-                {"game_pk": game_pk, "team_id": q.team_id, "ticker": q.ticker, "yes_bid": q.yes_bid,
-                 "yes_ask": q.yes_ask, "fetched_at": q.fetched_at}
-            )  # fmt: skip
-        if rows:
+def write_closes(quotes: list[tuple[int, Quote]], games: pd.DataFrame, now: datetime) -> int:
+    """Write each game's closing quote once: the quotes seen by the last
+    refresh before first pitch (games starting within CLOSE_WINDOW). The
+    table's trigger refuses a post-start or late quote."""
+    by_game: dict[int, dict[int, Quote]] = {}
+    for game_pk, q in quotes:
+        by_game.setdefault(game_pk, {})[q.team_id] = q
+    rows = []
+    for g in games.itertuples(index=False):
+        start = g.start_time_utc.to_pydatetime()
+        seen = by_game.get(int(g.game_pk), {})
+        home, away = seen.get(int(g.home_team_id)), seen.get(int(g.away_team_id))
+        if home is None or away is None or not (now < start <= now + CLOSE_WINDOW):
+            continue
+        rows.append(
+            {"game_pk": int(g.game_pk), "season": int(g.season), "start_time": start,
+             "fetched_at": min(home.fetched_at, away.fetched_at), "hb": home.yes_bid, "ha": home.yes_ask,
+             "ab": away.yes_bid, "aa": away.yes_ask}
+        )  # fmt: skip
+    if rows:
+        with get_engine().begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO lmb.kalshi_quotes VALUES "
-                    "(:game_pk, :team_id, :ticker, :yes_bid, :yes_ask, :fetched_at)"
+                    "INSERT INTO lmb.closing_lines (game_pk, season, start_time, fetched_at, home_yes_bid, "
+                    "home_yes_ask, away_yes_bid, away_yes_ask) "
+                    "VALUES (:game_pk, :season, :start_time, :fetched_at, :hb, :ha, :ab, :aa) "
+                    "ON CONFLICT (game_pk) DO NOTHING"
                 ),
                 rows,
             )
-
-
-def capture_closes(now: datetime) -> int:
-    """Write the closing quote (the last quote fetched before first pitch) for
-    games starting within the next CLOSE_WINDOW or started in the last one,
-    once each. The table's trigger refuses a late or post-start quote."""
-    with get_engine().begin() as conn:
-        result = conn.execute(
-            text(
-                """
-                INSERT INTO lmb.closing_lines (game_pk, season, start_time, fetched_at, home_yes_bid, home_yes_ask,
-                  away_yes_bid, away_yes_ask)
-                SELECT g.game_pk, g.season, g.start_time, max(q.fetched_at),
-                  (array_agg(q.yes_bid ORDER BY q.fetched_at DESC) FILTER (WHERE q.team_id = g.home_team_id))[1],
-                  (array_agg(q.yes_ask ORDER BY q.fetched_at DESC) FILTER (WHERE q.team_id = g.home_team_id))[1],
-                  (array_agg(q.yes_bid ORDER BY q.fetched_at DESC) FILTER (WHERE q.team_id = g.away_team_id))[1],
-                  (array_agg(q.yes_ask ORDER BY q.fetched_at DESC) FILTER (WHERE q.team_id = g.away_team_id))[1]
-                FROM lmb.games g
-                JOIN lmb.kalshi_quotes q ON q.game_pk = g.game_pk AND q.fetched_at < g.start_time
-                WHERE g.start_time BETWEEN :lo AND :hi
-                  AND NOT EXISTS (SELECT 1 FROM lmb.closing_lines c WHERE c.game_pk = g.game_pk)
-                GROUP BY g.game_pk, g.season, g.start_time
-                """
-            ),
-            {"lo": now - CLOSE_WINDOW, "hi": now + CLOSE_WINDOW},
-        )
-        return result.rowcount
+    return len(rows)
 
 
 class DbSlates:
@@ -199,7 +139,6 @@ def publish(rows: list[dict]) -> None:
     payload = []
     for r in rows:
         item = {k: r[k] for k in FORECAST_COLUMNS}
-        item["runs_hist"] = json.dumps(item["runs_hist"])
         item["prediction_context"] = json.dumps(item["prediction_context"])
         payload.append(item)
     game_pks = sorted({r["game_pk"] for r in rows})
