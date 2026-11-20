@@ -1,0 +1,28 @@
+# Local guidance
+AGENTS.md
+CLAUDE.md
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.claude/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Data caches, fitted artifacts and execution scratch
+cache/
+artifacts/
+.superpowers/
+
+# Local design docs (never tracked)
+docs/superpowers/
+
+# OS
+.DS_Store

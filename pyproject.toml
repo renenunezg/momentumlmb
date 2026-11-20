@@ -1,0 +1,53 @@
+[project]
+name = "momentumlmb"
+version = "0.1.0"
+description = "Liga Mexicana de Beisbol game forecasts: Bayesian player skills, lineup simulation and Kalshi benchmarking"
+authors = [{ name = "Rene Nunez" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pandas (>=2.3,<3.0)",
+    "numpy (>=2.0,<3.0)",
+    "pyarrow (>=17.0)",
+    "requests (>=2.32,<3.0)",
+    "python-dotenv (>=1.1,<2.0)",
+    "scipy (>=1.14,<2.0)",
+    "sqlalchemy (>=2.0,<3.0)",
+    "psycopg[binary] (>=3.2,<4.0)",
+    # Same pins as mlbmodel/v2/requirements.txt (numpyro 0.20.1 breaks on jax >= 0.10;
+    # arviz 0.21 needs matplotlib < 3.11; xarray 2026.9 breaks h5netcdf 1.6.1).
+    "pymc (==5.22.0)",
+    "arviz (==0.21.0)",
+    "matplotlib (<3.11)",
+    "xarray (==2026.7.0)",
+    "h5netcdf (==1.6.1)",
+    "netcdf4 (==1.7.4)",
+    "numpyro (==0.20.1)",
+    "jax (==0.7.2)",
+    "jaxlib (==0.7.2)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.scrape]
+optional = true
+
+[tool.poetry.group.scrape.dependencies]
+playwright = "^1.48"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+ruff = "^0.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "BLE", "UP"]
