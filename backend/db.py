@@ -26,15 +26,10 @@ def writes_allowed() -> bool:
     local run is denied by default. CI opts in automatically (GitHub Actions
     sets GITHUB_ACTIONS=true); a human sets MOMENTUMLMB_DB_WRITES=1 to mutate
     production intentionally."""
-    return (
-        os.getenv("GITHUB_ACTIONS") == "true"
-        or os.getenv("MOMENTUMLMB_DB_WRITES") == "1"
-    )
+    return os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("MOMENTUMLMB_DB_WRITES") == "1"
 
 
-def _block_unauthorized_writes(
-    conn, cursor, statement, parameters, context, executemany
-):
+def _block_unauthorized_writes(conn, cursor, statement, parameters, context, executemany):
     # Fails fast with a clear message; the read-only session below is the
     # real guard.
     if _is_write_statement(statement) and not writes_allowed():

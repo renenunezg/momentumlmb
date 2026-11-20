@@ -1,7 +1,7 @@
 """Plate-appearance outcome logits (ported from mlbmodel v2/simulator/pa_sim.py):
 
     logits[k] = intercept[season, k] + batter[b, k] + vs_lhp * platoon[b, k]
-              + pitcher[p, k] + park[venue] * woba[k]
+              + pitcher[p, k] + park[venue, k]
 
 with OUT spliced back in at logit 0."""
 
@@ -40,6 +40,6 @@ def pa_logits_batch(
         + draw.batter_offset[b]
         + np.asarray(vs_lhp, dtype=float)[:, None] * draw.platoon_offset[b]
         + draw.pitcher_offset[p]
-        + draw.park_log(venue_id) * draw.woba_free[None, :]
+        + draw.park_log(venue_id)[None, :]
     )
     return build_full_logits(free)

@@ -29,11 +29,11 @@ def _draw() -> PosteriorDraw:
         batter_offset=zeros,
         platoon_offset=zeros,
         pitcher_offset=zeros,
-        park={5340: 0.0},
-        elevation_slope=0.0,
+        park={5340: np.zeros(len(NON_REF_IDX))},
+        elevation_slope=np.zeros(len(NON_REF_IDX)),
+        elevation_center_km=0.0,
         batter_ids=np.array([], dtype=np.int64),
         pitcher_ids=np.array([], dtype=np.int64),
-        woba_free=np.zeros(len(NON_REF_IDX)),
     )
 
 

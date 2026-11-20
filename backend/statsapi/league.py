@@ -55,8 +55,6 @@ def refresh_teams_csv(season: int = 2026) -> None:
             "display_name": display.get(t["id"], t["name"]),
             "zone": ZONE_BY_DIVISION[t["division"]["id"]],
         }
-        for t in get("/v1/teams", sportId=sport_id_for(season), season=season, leagueIds=LEAGUE_ID)[
-            "teams"
-        ]
+        for t in get("/v1/teams", sportId=sport_id_for(season), season=season, leagueIds=LEAGUE_ID)["teams"]
     ]
     pd.DataFrame(rows).sort_values("id").to_csv(path, index=False)

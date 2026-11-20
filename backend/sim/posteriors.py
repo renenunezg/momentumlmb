@@ -3,7 +3,7 @@
 
 Unknown players fall back to a zero offset (league average). An unknown
 season uses the pooled league mean; an unknown venue uses its altitude
-prior (elevation slope times elevation)."""
+prior (elevation slope times centred elevation)."""
 
 import json
 from dataclasses import dataclass
@@ -12,7 +12,6 @@ from pathlib import Path
 import arviz as az
 import numpy as np
 
-from backend.etl.pa_frame import OUTCOMES
 from backend.skills.common import MODEL_VERSION, NON_REF_IDX
 from backend.venues import venue
 
@@ -24,11 +23,11 @@ class PosteriorDraw:
     batter_offset: np.ndarray  # (n_b + 1, K_FREE), last row zeros
     platoon_offset: np.ndarray  # (n_b + 1, K_FREE), last row zeros
     pitcher_offset: np.ndarray  # (n_p + 1, K_FREE), last row zeros
-    park: dict[int, float]  # venue_id -> park logit coefficient
-    elevation_slope: float
+    park: dict[int, np.ndarray]  # venue_id -> (K_FREE,) park logit effects
+    elevation_slope: np.ndarray  # (K_FREE,)
+    elevation_center_km: float
     batter_ids: np.ndarray
     pitcher_ids: np.ndarray
-    woba_free: np.ndarray  # (K_FREE,)
 
     def encode_batter(self, ids: np.ndarray) -> np.ndarray:
         return _encode(ids, self.batter_ids)
@@ -39,10 +38,10 @@ class PosteriorDraw:
     def season_intercept(self, season: int) -> np.ndarray:
         return self.intercept.get(season, self.intercept_mu)
 
-    def park_log(self, venue_id: int) -> float:
+    def park_log(self, venue_id: int) -> np.ndarray:
         if venue_id in self.park:
             return self.park[venue_id]
-        return self.elevation_slope * float(venue(venue_id).elevation_m) / 1000.0
+        return self.elevation_slope * (float(venue(venue_id).elevation_m) / 1000.0 - self.elevation_center_km)
 
 
 def _encode(ids: np.ndarray, sorted_ids: np.ndarray) -> np.ndarray:
@@ -67,8 +66,6 @@ def load_posterior_draws(bundle: Path, n_draws: int, rng: np.random.Generator) -
             raise ValueError(f"{bundle} holds a different model version; refit")
     if pit.posterior.attrs.get("training_max_date") != bat.posterior.attrs.get("training_max_date"):
         raise ValueError(f"{bundle} mixes training cutoffs; refit")
-    weights = json.loads((bundle / "woba.json").read_text())
-    woba_free = np.array([weights[OUTCOMES[i]] for i in NON_REF_IDX])
 
     ps = pit.posterior.stack(sample=("chain", "draw"))
     bs = bat.posterior.stack(sample=("chain", "draw"))
@@ -78,6 +75,7 @@ def load_posterior_draws(bundle: Path, n_draws: int, rng: np.random.Generator) -
     picks = rng.choice(n, size=n_draws, replace=False)
 
     roles = pit.constant_data["pitcher_role"].values.astype(int)
+    center = float(np.asarray(pit.constant_data["elevation_center_km"].values).reshape(-1)[0])
     seasons = ps["season"].values.astype(int)
     venues = ps["venue"].values.astype(int)
     pitcher_ids = ps["pitcher"].values.astype(np.int64)
@@ -98,11 +96,11 @@ def load_posterior_draws(bundle: Path, n_draws: int, rng: np.random.Generator) -
                 batter_offset=np.vstack([beta_main, zeros]),
                 platoon_offset=np.vstack([beta_platoon, zeros]),
                 pitcher_offset=np.vstack([beta_pitcher, zeros]),
-                park={int(v): float(p["park_log"].values[j]) for j, v in enumerate(venues)},
-                elevation_slope=float(p["elevation_slope"].values),
+                park={int(v): p["park_log"].values[j] for j, v in enumerate(venues)},
+                elevation_slope=p["elevation_slope"].values,
+                elevation_center_km=center,
                 batter_ids=batter_ids,
                 pitcher_ids=pitcher_ids,
-                woba_free=woba_free,
             )
         )
     return draws

@@ -13,7 +13,7 @@ REF_IDX = OUTCOMES.index("OUT")
 NON_REF_IDX = [i for i in range(len(OUTCOMES)) if i != REF_IDX]
 NON_REF_LABELS = [OUTCOMES[i] for i in NON_REF_IDX]
 K_FREE = len(NON_REF_IDX)
-MODEL_VERSION = "lmb-sim-v1"
+MODEL_VERSION = "lmb-sim-v3"
 
 
 @dataclass(frozen=True)
@@ -48,33 +48,3 @@ def write_diagnostics(path: Path, payload: dict) -> None:
 
 def evaluate_gate(rhat_max: float, ess_min: float, threshold_rhat: float = 1.01, threshold_ess: float = 400) -> bool:
     return bool(rhat_max <= threshold_rhat and ess_min > threshold_ess)
-
-
-def _state(frame: pd.DataFrame) -> np.ndarray:
-    return (
-        frame["on_1b"].astype(int).to_numpy()
-        + 2 * frame["on_2b"].astype(int).to_numpy()
-        + 4 * frame["on_3b"].astype(int).to_numpy()
-    )
-
-
-def woba_weights(pa: pd.DataFrame) -> dict[str, float]:
-    """LMB linear weights: each outcome's average change in run expectancy
-    (plus runs on the play) from a base-out run-expectancy table built on the
-    same PAs, expressed relative to an out, so OUT and K sit at zero as in
-    FanGraphs wOBA. Used only to tilt logits by a park coefficient."""
-    df = pa.sort_values(["game_pk", "inning", "inning_topbot", "at_bat_number"]).copy()
-    df["state"] = _state(df)
-    keys = ["game_pk", "inning", "inning_topbot"]
-    half_final = df.groupby(keys)["post_bat_score"].transform("max")
-    df["runs_rest"] = half_final - df["bat_score"]
-    re = df.groupby(["state", "outs_when_up"])["runs_rest"].mean()
-    df["re_now"] = re.reindex(pd.MultiIndex.from_arrays([df["state"], df["outs_when_up"]])).to_numpy()
-    nxt = df.groupby(keys)["re_now"].shift(-1).fillna(0.0)
-    df["value"] = nxt - df["re_now"] + (df["post_bat_score"] - df["bat_score"])
-    by_outcome = df.groupby("outcome")["value"].mean()
-    out_value = float(by_outcome["OUT"])
-    weights = {o: float(by_outcome[o]) - out_value for o in OUTCOMES}
-    weights["OUT"] = 0.0
-    weights["K"] = 0.0
-    return weights

@@ -18,18 +18,14 @@ from backend.skills.pitcher import cell_counts, full_logits
 HANDS = ("vs_R", "vs_L")
 
 
-def build_model(
-    pa: pd.DataFrame, intercept: pd.DataFrame, park: pd.Series, woba_free: np.ndarray
-) -> tuple[pm.Model, dict]:
-    """`intercept` is indexed by season with K_FREE columns; `park` by venue_id."""
+def build_model(pa: pd.DataFrame, intercept: pd.DataFrame, park: pd.DataFrame) -> tuple[pm.Model, dict]:
+    """`intercept` and `park` are indexed by season and venue_id with K_FREE columns."""
     batters = ActorIndex.from_series(pa["batter"])
     frame = pa.assign(vs_lhp=(pa["p_throws"] == "L").astype(np.int64))
     cells, counts = cell_counts(frame, ["batter", "vs_lhp", "season", "venue_id"])
     b_code = batters.encode(cells["batter"].to_numpy())
     lhp = cells["vs_lhp"].to_numpy(dtype=float)[:, None]
-    offset = (
-        intercept.loc[cells["season"]].to_numpy() + park.loc[cells["venue_id"]].to_numpy()[:, None] * woba_free[None, :]
-    )
+    offset = intercept.loc[cells["season"]].to_numpy() + park.loc[cells["venue_id"]].to_numpy()
 
     coords = {"outcome_free": NON_REF_LABELS, "batter": batters.ids}
     with pm.Model(coords=coords) as model:
@@ -51,14 +47,13 @@ def fit(
     pa: pd.DataFrame,
     intercept: pd.DataFrame,
     park: pd.Series,
-    woba_free: np.ndarray,
     *,
     draws: int,
     tune: int,
     chains: int,
     seed: int,
 ) -> tuple[az.InferenceData, dict, float]:
-    model, meta = build_model(pa, intercept, park, woba_free)
+    model, meta = build_model(pa, intercept, park)
     t0 = time.time()
     with model:
         idata = pm.sample(

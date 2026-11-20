@@ -44,3 +44,13 @@ def optimal_anchor_weight(p_market: np.ndarray, p_sim_shifted: np.ndarray, home_
         return -(y * z - np.logaddexp(0, z)).mean()
 
     return float(minimize_scalar(loss, bounds=(0.0, 1.0), method="bounded").x)
+
+
+def hr_density_coefficient(pa, weather) -> tuple[float, float]:
+    """Home-run logit change per 0.01 kg/m3 of air thinner than the venue-season
+    median, from regular-season PAs (offset: the venue-season HR rate)."""
+    d = pa[pa.game_type == "R"].merge(weather[["game_pk", "air_density"]], on="game_pk")
+    x = ((d.groupby(["venue_id", "season"]).air_density.transform("median") - d.air_density) / 0.01).to_numpy()
+    y = (d.outcome == "HR").astype(float).to_numpy()
+    rate = d.groupby(["venue_id", "season"]).outcome.transform(lambda s: (s == "HR").mean()).clip(1e-4, 1 - 1e-4)
+    return _offset_logistic(np.log(rate / (1 - rate)).to_numpy(), x, y)

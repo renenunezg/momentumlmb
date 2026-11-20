@@ -77,7 +77,7 @@ def simulate_game(
     home_bq, away_bq = gbq.batter_q(home_arr), gbq.batter_q(away_arr)
     home_pq, away_pq = gbq.pitcher_q(home_pids), gbq.pitcher_q(away_pids)
 
-    n_out = len(draw.woba_free) + 1
+    n_out = len(draw.intercept_mu) + 1
     if form_sigma > 0:
         away_form = rng.normal(0.0, form_sigma, size=(n_sims, n_out))
         away_form -= away_form.mean(axis=1, keepdims=True)

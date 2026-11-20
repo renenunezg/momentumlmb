@@ -3,13 +3,20 @@ venue park effects pooled toward altitude (ported from mlbmodel
 v2/bayesian/pitcher_skill.py).
 
 Cells are (pitcher, season, venue). Each cell's free logits are
-    intercept[season] + beta_pitcher[pitcher] + park[venue] * woba
+    intercept[season] + beta_pitcher[pitcher] + park[venue]
 with OUT as the reference. Season intercepts are partially pooled around a
 league mean, so a season with few games leans on recent seasons. Park
 effects live here rather than in a separate stage because LMB parks are
 extreme (run factors about 0.63 to 1.33): fitting them jointly keeps a
-Mexico City pitcher's skill from absorbing his home park. Each park's prior
-mean is a fitted slope on elevation in km."""
+Mexico City pitcher's skill from absorbing his home park.
+
+Parks act on each outcome separately: altitude does not only add home runs, it
+also cuts strikeouts (16.7% of PAs in the high parks against 20.4% at sea
+level in 2024-2025) and lifts singles and doubles, so a single scalar park
+tilt (mlbmodel's, through wOBA weights that treat a strikeout like any out)
+left sea-level and mid-altitude parks about a run a game too high. Each
+park-outcome effect is pooled toward a per-outcome slope on elevation in km,
+centred on the average plate appearance's park."""
 
 import time
 
@@ -84,7 +91,7 @@ def full_logits(logit_free):
     return pt.concatenate(cols, axis=1)
 
 
-def build_model(pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray) -> tuple[pm.Model, dict]:
+def build_model(pa: pd.DataFrame, venues: pd.DataFrame) -> tuple[pm.Model, dict]:
     log_p = league_log_p(encode_outcomes(pa["outcome"]))
     intercept_prior = log_p[NON_REF_IDX] - log_p[REF_IDX]
 
@@ -92,6 +99,8 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray) -
     seasons = np.sort(pa["season"].unique())
     venue_ids = np.sort(pa["venue_id"].unique())
     elevation_km = venues.loc[venue_ids, "elevation_m"].to_numpy(dtype=float) / 1000.0
+    pa_elevation_km = venues.loc[pa["venue_id"].to_numpy(), "elevation_m"].to_numpy(dtype=float) / 1000.0
+    elevation_center = float(pa_elevation_km.mean())
 
     cells, counts = cell_counts(pa, ["pitcher", "season", "venue_id"])
     p_code = pitchers.encode(cells["pitcher"].to_numpy())
@@ -110,6 +119,7 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray) -
     }
     with pm.Model(coords=coords) as model:
         pm.Data("pitcher_role", role_slot, dims="pitcher")
+        pm.Data("elevation_center_km", elevation_center)
         mu = pm.Normal("intercept_mu", mu=intercept_prior, sigma=0.5, dims="outcome_free")
         tau = pm.HalfNormal("intercept_tau", sigma=0.2, dims="outcome_free")
         z_season = pm.Normal("z_season", 0.0, 1.0, dims=("season", "outcome_free"))
@@ -121,12 +131,16 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray) -
         z_pitcher = pm.Normal("z_pitcher", 0.0, 1.0, dims=("pitcher", "outcome_free"))
         beta_pitcher = sigma_pitcher[role_slot] * z_pitcher
 
-        elevation_slope = pm.Normal("elevation_slope", 0.0, 0.5)
-        park_sigma = pm.HalfNormal("park_sigma", 0.25)
-        z_park = pm.Normal("z_park", 0.0, 1.0, dims="venue")
-        park = pm.Deterministic("park_log", elevation_slope * elevation_km + park_sigma * z_park, dims="venue")
+        elevation_slope = pm.Normal("elevation_slope", 0.0, 0.5, dims="outcome_free")
+        park_sigma = pm.HalfNormal("park_sigma", 0.15, dims="outcome_free")
+        z_park = pm.Normal("z_park", 0.0, 1.0, dims=("venue", "outcome_free"))
+        park = pm.Deterministic(
+            "park_log",
+            (elevation_km - elevation_center)[:, None] * elevation_slope[None, :] + park_sigma[None, :] * z_park,
+            dims=("venue", "outcome_free"),
+        )
 
-        logit_free = intercept[s_code] + beta_pitcher[p_code] + park[v_code][:, None] * woba_free[None, :]
+        logit_free = intercept[s_code] + beta_pitcher[p_code] + park[v_code]
         pm.Multinomial(
             "outcome_counts", n=counts.sum(axis=1), p=pm.math.softmax(full_logits(logit_free), axis=1), observed=counts
         )
@@ -144,9 +158,9 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray) -
 
 
 def fit(
-    pa: pd.DataFrame, venues: pd.DataFrame, woba_free: np.ndarray, *, draws: int, tune: int, chains: int, seed: int
+    pa: pd.DataFrame, venues: pd.DataFrame, *, draws: int, tune: int, chains: int, seed: int
 ) -> tuple[az.InferenceData, dict, float]:
-    model, meta = build_model(pa, venues, woba_free)
+    model, meta = build_model(pa, venues)
     t0 = time.time()
     with model:
         idata = pm.sample(

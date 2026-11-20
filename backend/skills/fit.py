@@ -5,12 +5,10 @@ from datetime import date
 from pathlib import Path
 
 import arviz as az
-import numpy as np
 import pandas as pd
 
-from backend.etl.pa_frame import OUTCOMES
 from backend.skills import batter, pitcher
-from backend.skills.common import MODEL_VERSION, NON_REF_IDX, evaluate_gate, woba_weights, write_diagnostics
+from backend.skills.common import MODEL_VERSION, evaluate_gate, write_diagnostics
 from backend.venues import load_venues
 
 DRAWS = 1000
@@ -46,25 +44,21 @@ def fit_all(
     enforce_gate: bool = True,
 ) -> Path:
     """Fit on regular-season PAs before `through` and write pitcher.nc,
-    batter.nc, woba.json and diagnostics.json. Raises if any gate fails, unless enforce_gate is off
+    batter.nc and diagnostics.json. Raises if any gate fails, unless enforce_gate is off
     (walk-forward evaluation records the miss and carries on)."""
     train = training_frame(pa, through, seasons_back)
     if train.empty:
         raise ValueError(f"No training PAs before {through}")
-    weights = woba_weights(train)
-    woba_free = np.array([weights[OUTCOMES[i]] for i in NON_REF_IDX])
     venues = load_venues()
 
     pit_pa, dropped = pitcher.filter_position_player_pitching(train)
-    pit, pit_meta, pit_s = pitcher.fit(pit_pa, venues, woba_free, draws=draws, tune=tune, chains=chains, seed=SEED)
+    pit, pit_meta, pit_s = pitcher.fit(pit_pa, venues, draws=draws, tune=tune, chains=chains, seed=SEED)
     pit_diag = _gate(pit, pitcher.GATE_VARS)
 
     post = pit.posterior
     intercept = pd.DataFrame(post["intercept"].mean(("chain", "draw")).values, index=post["season"].values)
-    park = pd.Series(post["park_log"].mean(("chain", "draw")).values, index=post["venue"].values)
-    bat, bat_meta, bat_s = batter.fit(
-        train, intercept, park, woba_free, draws=draws, tune=tune, chains=chains, seed=SEED
-    )
+    park = pd.DataFrame(post["park_log"].mean(("chain", "draw")).values, index=post["venue"].values)
+    bat, bat_meta, bat_s = batter.fit(train, intercept, park, draws=draws, tune=tune, chains=chains, seed=SEED)
     bat_diag = _gate(bat, batter.GATE_VARS)
 
     max_date = str(pd.to_datetime(train["official_date"]).max().date())
@@ -74,7 +68,6 @@ def fit_all(
     out_dir.mkdir(parents=True, exist_ok=True)
     pit.to_netcdf(out_dir / "pitcher.nc")
     bat.to_netcdf(out_dir / "batter.nc")
-    write_diagnostics(out_dir / "woba.json", weights)
     passed = pit_diag["gate_passed"] and bat_diag["gate_passed"]
     write_diagnostics(
         out_dir / "diagnostics.json",
