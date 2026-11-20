@@ -172,11 +172,14 @@ def score(
     candidates = [{"game_pk": int(c.game.game_pk), "home": c.home, "away": c.away} for c in contexts]
     slate = resolve_slate(day, now, games.start_time_utc.dropna().tolist(), candidates, slates)
 
-    rng = np.random.default_rng(seed)
-    draws = load_posterior_draws(bundle, N_DRAWS, rng)
+    draws = load_posterior_draws(bundle, N_DRAWS, np.random.default_rng(seed))
     adv, sub, gbq = load_advancement_table(bundle), load_out_subtype_table(bundle), load_gb_quartiles(bundle)
     rows, quotes_seen = [], []
     for c in contexts:
+        # Same inputs, same simulation: an unchanged game produces an identical row, which publish() skips.
+        starters = f"{c.inputs.home_queue.starter}|{c.inputs.away_queue.starter}"
+        key = f"{seed}|{cutoff}|{int(c.game.game_pk)}|{c.lineup_hash}|{starters}"
+        rng = np.random.default_rng(int(hashlib.sha1(key.encode()).hexdigest()[:15], 16))
         result = simulate_draws(rng, draws, adv, sub, gbq, c.inputs, N_PER_DRAW)
         home_win = result.home_runs > result.away_runs
         p_sim = float(home_win.mean())

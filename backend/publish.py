@@ -131,16 +131,29 @@ class DryRunSlates:
         self.rows[day] = game_pks
 
 
-def publish(rows: list[dict]) -> None:
-    """Replace today's rows and upsert the season rows of unstarted games.
-    Raises if a row's date is not its game's official date."""
+COMPARED = ("win_prob", "sim_win_prob", "market_prob", "kalshi_bid", "kalshi_ask", "expected_runs", "lineup_source",
+            "lineup_hash", "prediction_context")  # fmt: skip
+
+
+def _comparable(row: dict) -> tuple:
+    out = []
+    for c in COMPARED:
+        v = row[c]
+        if c == "prediction_context":
+            v = json.dumps(v if isinstance(v, dict) else json.loads(v), sort_keys=True)
+        elif v is not None and not isinstance(v, str):
+            v = round(float(v), 4)
+        out.append(v)
+    return tuple(out)
+
+
+def publish(rows: list[dict]) -> int:
+    """Upsert the date's forecasts for unstarted games, writing only games whose
+    forecast changed since the last run (keeps database writes to a minimum).
+    Raises if a row's date is not its game's official date. Returns the number
+    of rows written."""
     if not rows:
-        return
-    payload = []
-    for r in rows:
-        item = {k: r[k] for k in FORECAST_COLUMNS}
-        item["prediction_context"] = json.dumps(item["prediction_context"])
-        payload.append(item)
+        return 0
     game_pks = sorted({r["game_pk"] for r in rows})
     day = rows[0]["date"]
     columns = ", ".join(FORECAST_COLUMNS)
@@ -155,14 +168,29 @@ def publish(rows: list[dict]) -> None:
         for r in rows:
             if official.get(r["game_pk"]) != r["date"]:
                 raise RuntimeError(f"Game {r['game_pk']} official date {official.get(r['game_pk'])} != {r['date']}")
-        conn.execute(
-            text("DELETE FROM lmb.model_outputs WHERE date <> :d OR game_pk = ANY(:pks)"), {"d": day, "pks": game_pks}
-        )
-        conn.execute(text(f"INSERT INTO lmb.model_outputs ({columns}, updated_at) VALUES ({values}, now())"), payload)
-        conn.execute(
-            text(
-                f"INSERT INTO lmb.model_outputs_season ({columns}, updated_at) VALUES ({values}, now()) "
-                f"ON CONFLICT (game_pk, team) DO UPDATE SET {updates}, updated_at = now()"
-            ),
-            payload,
-        )
+        stored = {
+            (m["game_pk"], m["team"]): _comparable(m)
+            for m in conn.execute(
+                text(f"SELECT {', '.join(('game_pk', 'team') + COMPARED)} FROM lmb.model_outputs_season "
+                     "WHERE game_pk = ANY(:pks)"),
+                {"pks": game_pks},
+            ).mappings()
+        }  # fmt: skip
+        changed = {r["game_pk"] for r in rows if stored.get((r["game_pk"], r["team"])) != _comparable(r)}
+        payload = []
+        for r in rows:
+            if r["game_pk"] in changed:
+                item = {k: r[k] for k in FORECAST_COLUMNS}
+                item["prediction_context"] = json.dumps(item["prediction_context"])
+                payload.append(item)
+        conn.execute(text("DELETE FROM lmb.model_outputs WHERE date <> :d"), {"d": day})
+        if payload:
+            for table in ("model_outputs", "model_outputs_season"):
+                conn.execute(
+                    text(
+                        f"INSERT INTO lmb.{table} ({columns}, updated_at) VALUES ({values}, now()) "
+                        f"ON CONFLICT (game_pk, team) DO UPDATE SET {updates}, updated_at = now()"
+                    ),
+                    payload,
+                )
+    return len(payload)
