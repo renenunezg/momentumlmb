@@ -2,8 +2,8 @@
 venue park effects pooled toward altitude (ported from mlbmodel
 v2/bayesian/pitcher_skill.py).
 
-Cells are (pitcher, season, venue). Each cell's free logits are
-    intercept[season] + beta_pitcher[pitcher] + park[venue]
+Cells are (pitcher, season, month, venue). Each cell's free logits are
+    intercept[season] + month[month] + beta_pitcher[pitcher] + park[venue]
 with OUT as the reference. Season intercepts are partially pooled around a
 league mean, so a season with few games leans on recent seasons. Park
 effects live here rather than in a separate stage because LMB parks are
@@ -12,11 +12,15 @@ Mexico City pitcher's skill from absorbing his home park.
 
 Parks act on each outcome separately: altitude does not only add home runs, it
 also cuts strikeouts (16.7% of PAs in the high parks against 20.4% at sea
-level in 2024-2025) and lifts singles and doubles, so a single scalar park
+level in 2024-2025) and lifts singles and doubles, which a single scalar park
 tilt (mlbmodel's, through wOBA weights that treat a strikeout like any out)
-left sea-level and mid-altitude parks about a run a game too high. Each
-park-outcome effect is pooled toward a per-outcome slope on elevation in km,
-centred on the average plate appearance's park."""
+cannot express. Each park-outcome effect is pooled toward a per-outcome slope
+on elevation in km, centred on the average plate appearance's park.
+
+The month effect carries the within-season drift: LMB home-run rates fall
+from June to August in every season 2021-2025 (by 15 to 25 percent), and
+without it the walk-forward forecasts ran about a run a game high from July
+on and through the playoffs."""
 
 import time
 
@@ -30,10 +34,12 @@ from backend.skills.common import (
     K_FREE,
     NON_REF_IDX,
     NON_REF_LABELS,
+    MONTHS,
     REF_IDX,
     ActorIndex,
     encode_outcomes,
     league_log_p,
+    season_month,
 )
 
 ROLES = ("SP", "RP")
@@ -102,7 +108,9 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame) -> tuple[pm.Model, dict]
     pa_elevation_km = venues.loc[pa["venue_id"].to_numpy(), "elevation_m"].to_numpy(dtype=float) / 1000.0
     elevation_center = float(pa_elevation_km.mean())
 
-    cells, counts = cell_counts(pa, ["pitcher", "season", "venue_id"])
+    frame = pa.assign(month=season_month(pa["official_date"]))
+    cells, counts = cell_counts(frame, ["pitcher", "season", "month", "venue_id"])
+    m_code = np.searchsorted(MONTHS, cells["month"].to_numpy())
     p_code = pitchers.encode(cells["pitcher"].to_numpy())
     s_code = np.searchsorted(seasons, cells["season"].to_numpy())
     v_code = np.searchsorted(venue_ids, cells["venue_id"].to_numpy())
@@ -115,6 +123,7 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame) -> tuple[pm.Model, dict]
         "pitcher": pitchers.ids,
         "season": seasons,
         "venue": venue_ids,
+        "month": list(MONTHS),
         "role": list(ROLES),
     }
     with pm.Model(coords=coords) as model:
@@ -126,6 +135,10 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame) -> tuple[pm.Model, dict]
         intercept = pm.Deterministic(
             "intercept", mu[None, :] + tau[None, :] * z_season, dims=("season", "outcome_free")
         )
+
+        # Within-season level by calendar month, zero-sum so the season
+        # intercept stays the season's average month.
+        month_effect = pm.ZeroSumNormal("month_effect", sigma=0.2, dims=("outcome_free", "month"))
 
         sigma_pitcher = pm.HalfNormal("sigma_pitcher", sigma=0.6, dims=("role", "outcome_free"))
         z_pitcher = pm.Normal("z_pitcher", 0.0, 1.0, dims=("pitcher", "outcome_free"))
@@ -140,7 +153,7 @@ def build_model(pa: pd.DataFrame, venues: pd.DataFrame) -> tuple[pm.Model, dict]
             dims=("venue", "outcome_free"),
         )
 
-        logit_free = intercept[s_code] + beta_pitcher[p_code] + park[v_code]
+        logit_free = intercept[s_code] + month_effect.T[m_code] + beta_pitcher[p_code] + park[v_code]
         pm.Multinomial(
             "outcome_counts", n=counts.sum(axis=1), p=pm.math.softmax(full_logits(logit_free), axis=1), observed=counts
         )
@@ -176,4 +189,4 @@ def fit(
     return idata, meta, time.time() - t0
 
 
-GATE_VARS = ("intercept_mu", "intercept_tau", "intercept", "sigma_pitcher", "elevation_slope", "park_sigma", "park_log")
+GATE_VARS = ("intercept_mu", "intercept_tau", "intercept", "month_effect", "sigma_pitcher", "elevation_slope", "park_sigma", "park_log")

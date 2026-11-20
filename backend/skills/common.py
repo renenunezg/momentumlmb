@@ -13,7 +13,14 @@ REF_IDX = OUTCOMES.index("OUT")
 NON_REF_IDX = [i for i in range(len(OUTCOMES)) if i != REF_IDX]
 NON_REF_LABELS = [OUTCOMES[i] for i in NON_REF_IDX]
 K_FREE = len(NON_REF_IDX)
-MODEL_VERSION = "lmb-sim-v3"
+MODEL_VERSION = "lmb-sim-v4"
+# Calendar months the season effect distinguishes; earlier and later dates
+# (spring openers, September playoffs) take the nearest month's effect.
+MONTHS = (4, 5, 6, 7, 8)
+
+
+def season_month(dates) -> np.ndarray:
+    return np.clip(pd.to_datetime(pd.Series(dates)).dt.month.to_numpy(), MONTHS[0], MONTHS[-1])
 
 
 @dataclass(frozen=True)

@@ -33,6 +33,7 @@ class GameInputs:
     away_queue: BullpenQueue  # pitches the bottom halves
     venue_id: int
     season: int
+    month: int  # calendar month of the official date
     home_throws: dict[int, str]  # pitcher id -> "L" or "R"
     away_throws: dict[int, str]
     rules: Rules
@@ -132,7 +133,7 @@ def simulate_game(
         pitcher_ids = np.where(is_top, home_pids[p_idx_home], away_pids[p_idx_away])
         vs_lhp = np.where(is_top, home_lhp[p_idx_home], away_lhp[p_idx_away]).astype(bool)
 
-        logits = pa_logits_batch(draw, batter_ids, pitcher_ids, vs_lhp, inputs.season, inputs.venue_id)
+        logits = pa_logits_batch(draw, batter_ids, pitcher_ids, vs_lhp, inputs.season, inputs.month, inputs.venue_id)
         logits = logits + weather + np.where(is_top[:, None], away_form, home_form)
         outcomes = sample_categorical(rng, softmax(logits))
         batter_bq = np.where(is_top, away_bq[li_away % 9], home_bq[li_home % 9])

@@ -1,8 +1,8 @@
 """Hierarchical multinomial-logit batter model with a platoon split (ported
 from mlbmodel v2/bayesian/batter_skill.py).
 
-Cells are (batter, vs-left-handed-pitcher, season, venue). The season
-intercepts and park effects are frozen at the pitcher model's posterior
+Cells are (batter, vs-left-handed-pitcher, season, month, venue). The season
+intercepts, month effects and park effects are frozen at the pitcher model's posterior
 means, so both halves share one league baseline and one park scale."""
 
 import time
@@ -12,20 +12,27 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 
-from backend.skills.common import NON_REF_LABELS, ActorIndex
+from backend.skills.common import NON_REF_LABELS, ActorIndex, season_month
 from backend.skills.pitcher import cell_counts, full_logits
 
 HANDS = ("vs_R", "vs_L")
 
 
-def build_model(pa: pd.DataFrame, intercept: pd.DataFrame, park: pd.DataFrame) -> tuple[pm.Model, dict]:
-    """`intercept` and `park` are indexed by season and venue_id with K_FREE columns."""
+def build_model(
+    pa: pd.DataFrame, intercept: pd.DataFrame, month: pd.DataFrame, park: pd.DataFrame
+) -> tuple[pm.Model, dict]:
+    """`intercept`, `month` and `park` are indexed by season, calendar month and
+    venue_id with K_FREE columns."""
     batters = ActorIndex.from_series(pa["batter"])
-    frame = pa.assign(vs_lhp=(pa["p_throws"] == "L").astype(np.int64))
-    cells, counts = cell_counts(frame, ["batter", "vs_lhp", "season", "venue_id"])
+    frame = pa.assign(vs_lhp=(pa["p_throws"] == "L").astype(np.int64), month=season_month(pa["official_date"]))
+    cells, counts = cell_counts(frame, ["batter", "vs_lhp", "season", "month", "venue_id"])
     b_code = batters.encode(cells["batter"].to_numpy())
     lhp = cells["vs_lhp"].to_numpy(dtype=float)[:, None]
-    offset = intercept.loc[cells["season"]].to_numpy() + park.loc[cells["venue_id"]].to_numpy()
+    offset = (
+        intercept.loc[cells["season"]].to_numpy()
+        + month.loc[cells["month"]].to_numpy()
+        + park.loc[cells["venue_id"]].to_numpy()
+    )
 
     coords = {"outcome_free": NON_REF_LABELS, "batter": batters.ids}
     with pm.Model(coords=coords) as model:
@@ -46,14 +53,15 @@ def build_model(pa: pd.DataFrame, intercept: pd.DataFrame, park: pd.DataFrame) -
 def fit(
     pa: pd.DataFrame,
     intercept: pd.DataFrame,
-    park: pd.Series,
+    month: pd.DataFrame,
+    park: pd.DataFrame,
     *,
     draws: int,
     tune: int,
     chains: int,
     seed: int,
 ) -> tuple[az.InferenceData, dict, float]:
-    model, meta = build_model(pa, intercept, park)
+    model, meta = build_model(pa, intercept, month, park)
     t0 = time.time()
     with model:
         idata = pm.sample(

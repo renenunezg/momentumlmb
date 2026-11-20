@@ -127,6 +127,7 @@ def build_contexts(day: date, games: pd.DataFrame, pa: pd.DataFrame, workload: p
             away_queue=queues["away"],
             venue_id=int(g.venue_id),
             season=int(g.season),
+            month=day.month,
             home_throws=throws,
             away_throws=throws,
             rules=game_rules(int(g.season), g.game_type, int(g.scheduled_innings)),

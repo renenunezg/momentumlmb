@@ -12,7 +12,7 @@ from pathlib import Path
 import arviz as az
 import numpy as np
 
-from backend.skills.common import MODEL_VERSION, NON_REF_IDX
+from backend.skills.common import MODEL_VERSION, MONTHS, NON_REF_IDX
 from backend.venues import venue
 
 
@@ -20,6 +20,7 @@ from backend.venues import venue
 class PosteriorDraw:
     intercept: dict[int, np.ndarray]  # season -> (K_FREE,)
     intercept_mu: np.ndarray  # (K_FREE,) pooled mean, for unseen seasons
+    month_effect: dict[int, np.ndarray]  # calendar month -> (K_FREE,)
     batter_offset: np.ndarray  # (n_b + 1, K_FREE), last row zeros
     platoon_offset: np.ndarray  # (n_b + 1, K_FREE), last row zeros
     pitcher_offset: np.ndarray  # (n_p + 1, K_FREE), last row zeros
@@ -37,6 +38,9 @@ class PosteriorDraw:
 
     def season_intercept(self, season: int) -> np.ndarray:
         return self.intercept.get(season, self.intercept_mu)
+
+    def month_log(self, month: int) -> np.ndarray:
+        return self.month_effect[min(max(month, MONTHS[0]), MONTHS[-1])]
 
     def park_log(self, venue_id: int) -> np.ndarray:
         if venue_id in self.park:
@@ -78,6 +82,7 @@ def load_posterior_draws(bundle: Path, n_draws: int, rng: np.random.Generator) -
     center = float(np.asarray(pit.constant_data["elevation_center_km"].values).reshape(-1)[0])
     seasons = ps["season"].values.astype(int)
     venues = ps["venue"].values.astype(int)
+    months = ps["month"].values.astype(int)
     pitcher_ids = ps["pitcher"].values.astype(np.int64)
     batter_ids = bs["batter"].values.astype(np.int64)
     zeros = np.zeros((1, len(NON_REF_IDX)))
@@ -93,6 +98,7 @@ def load_posterior_draws(bundle: Path, n_draws: int, rng: np.random.Generator) -
             PosteriorDraw(
                 intercept={int(s): p["intercept"].values[j] for j, s in enumerate(seasons)},
                 intercept_mu=p["intercept_mu"].values,
+                month_effect={int(m): p["month_effect"].values[:, j] for j, m in enumerate(months)},
                 batter_offset=np.vstack([beta_main, zeros]),
                 platoon_offset=np.vstack([beta_platoon, zeros]),
                 pitcher_offset=np.vstack([beta_pitcher, zeros]),

@@ -1,4 +1,4 @@
-"""Fit the pitcher model (with season levels and parks), then the batter
+"""Fit the pitcher model (with season levels, month effects and parks), then the batter
 model against its frozen baseline, and write traces plus diagnostics."""
 
 from datetime import date
@@ -57,8 +57,9 @@ def fit_all(
 
     post = pit.posterior
     intercept = pd.DataFrame(post["intercept"].mean(("chain", "draw")).values, index=post["season"].values)
+    month = pd.DataFrame(post["month_effect"].mean(("chain", "draw")).values.T, index=post["month"].values)
     park = pd.DataFrame(post["park_log"].mean(("chain", "draw")).values, index=post["venue"].values)
-    bat, bat_meta, bat_s = batter.fit(train, intercept, park, draws=draws, tune=tune, chains=chains, seed=SEED)
+    bat, bat_meta, bat_s = batter.fit(train, intercept, month, park, draws=draws, tune=tune, chains=chains, seed=SEED)
     bat_diag = _gate(bat, batter.GATE_VARS)
 
     max_date = str(pd.to_datetime(train["official_date"]).max().date())

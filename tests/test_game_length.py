@@ -14,7 +14,7 @@ from backend.sim.gbq import GBQuartiles
 from backend.sim.posteriors import PosteriorDraw
 from backend.sim.rules import Rules
 from backend.sim.tables import build_advancement, build_out_subtype
-from backend.skills.common import NON_REF_IDX, REF_IDX
+from backend.skills.common import MONTHS, NON_REF_IDX, REF_IDX
 
 RATES = {"K": 0.20, "BB": 0.09, "HBP": 0.01, "1B": 0.15, "2B": 0.05, "3B": 0.005, "HR": 0.03, "OUT": 0.465}
 
@@ -26,6 +26,7 @@ def _draw() -> PosteriorDraw:
     return PosteriorDraw(
         intercept={2026: intercept},
         intercept_mu=intercept,
+        month_effect={m: np.zeros(len(NON_REF_IDX)) for m in MONTHS},
         batter_offset=zeros,
         platoon_offset=zeros,
         pitcher_offset=zeros,
@@ -53,6 +54,7 @@ def _inputs(innings: int) -> GameInputs:
         away_queue=queue,
         venue_id=5340,
         season=2026,
+        month=6,
         home_throws={},
         away_throws={},
         rules=Rules(innings=innings, extra_runner=True),

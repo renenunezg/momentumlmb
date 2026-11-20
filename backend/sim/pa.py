@@ -1,7 +1,7 @@
 """Plate-appearance outcome logits (ported from mlbmodel v2/simulator/pa_sim.py):
 
-    logits[k] = intercept[season, k] + batter[b, k] + vs_lhp * platoon[b, k]
-              + pitcher[p, k] + park[venue, k]
+    logits[k] = intercept[season, k] + month[m, k] + batter[b, k]
+              + vs_lhp * platoon[b, k] + pitcher[p, k] + park[venue, k]
 
 with OUT spliced back in at logit 0."""
 
@@ -31,12 +31,19 @@ def sample_categorical(rng: np.random.Generator, probs: np.ndarray) -> np.ndarra
 
 
 def pa_logits_batch(
-    draw: PosteriorDraw, batter_ids: np.ndarray, pitcher_ids: np.ndarray, vs_lhp: np.ndarray, season: int, venue_id: int
+    draw: PosteriorDraw,
+    batter_ids: np.ndarray,
+    pitcher_ids: np.ndarray,
+    vs_lhp: np.ndarray,
+    season: int,
+    month: int,
+    venue_id: int,
 ) -> np.ndarray:
     b = draw.encode_batter(batter_ids)
     p = draw.encode_pitcher(pitcher_ids)
     free = (
         draw.season_intercept(season)[None, :]
+        + draw.month_log(month)[None, :]
         + draw.batter_offset[b]
         + np.asarray(vs_lhp, dtype=float)[:, None] * draw.platoon_offset[b]
         + draw.pitcher_offset[p]
