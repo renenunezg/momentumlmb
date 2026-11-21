@@ -30,4 +30,8 @@ CREATE POLICY public_read ON lmb.prospects FOR SELECT TO anon, authenticated USI
 GRANT SELECT ON lmb.prospects TO anon, authenticated;
 GRANT ALL ON lmb.prospects TO service_role;
 
+-- The cached prospects page revalidates when the board changes, as for the other lmb tables.
+CREATE TRIGGER site_revalidate AFTER INSERT OR DELETE OR UPDATE OR TRUNCATE ON lmb.prospects
+  FOR EACH STATEMENT EXECUTE FUNCTION public.site_revalidate();
+
 COMMIT;

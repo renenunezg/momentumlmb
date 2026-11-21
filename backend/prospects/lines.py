@@ -47,6 +47,12 @@ def lmb_seasons(through: int) -> list[int]:
     return [y for y in range(FIRST_LMB, through + 1) if y != 2020]
 
 
+def _splits(response: dict) -> list[dict]:
+    """A season with no games yet comes back with an empty stats list."""
+    stats = response.get("stats") or []
+    return stats[0].get("splits", []) if stats else []
+
+
 def _stat_seasons(season: int) -> list[str]:
     """2018 is stored as two short seasons in the LMB."""
     return ["2018.1", "2018.2"] if season == 2018 else [str(season)]
@@ -58,7 +64,10 @@ def season_complete(source: str, season: int, today: date) -> bool:
     return today >= date(season, 10, 1)
 
 
-def _fetch(source: str, season: int) -> pd.DataFrame:
+def _fetch(source: str, season: int, open_season: bool) -> pd.DataFrame:
+    """One season's lines. An open season may have none yet (a league is added
+    on April 1 or October 1 and opens about two weeks later); a complete
+    season with none is an error."""
     if source == "lmb":
         queries = [(sport_id_for(season), LEAGUE_ID, s) for s in _stat_seasons(season)]
     elif source == "lmp":
@@ -83,7 +92,7 @@ def _fetch(source: str, season: int) -> pd.DataFrame:
                 )
                 if league:
                     params["leagueId"] = league
-                splits = get("/v1/stats", **params)["stats"][0]["splits"]
+                splits = _splits(get("/v1/stats", **params))
                 for split in splits:
                     stat = split.get("stat", {})
                     row = {
@@ -101,6 +110,8 @@ def _fetch(source: str, season: int) -> pd.DataFrame:
                 offset += PAGE
     frame = pd.DataFrame(rows)
     if frame.empty:
+        if open_season:
+            return frame
         raise RuntimeError(f"No {source} lines returned for {season}")
     if source == "milb":
         frame = frame[frame.league != LEAGUE_ID]
@@ -117,9 +128,12 @@ def load_lines(seasons: dict[str, list[int]], today: date, refresh_open: bool = 
     for source, years in seasons.items():
         for season in years:
             path = LINES_DIR / f"{source}_{season}.parquet"
-            stale = refresh_open and not season_complete(source, season, today)
-            if stale or not path.exists():
-                _fetch(source, season).to_parquet(path, index=False)
+            open_season = not season_complete(source, season, today)
+            if (refresh_open and open_season) or not path.exists():
+                fetched = _fetch(source, season, open_season)
+                if fetched.empty:  # not cached, so the next run asks again
+                    continue
+                fetched.to_parquet(path, index=False)
             frames.append(pd.read_parquet(path))
     return pd.concat(frames, ignore_index=True)
 
@@ -176,16 +190,20 @@ def load_team_games(seasons: list[int], today: date) -> pd.Series:
             continue
         total = 0.0
         for stat_season in _stat_seasons(season):
-            splits = get(
-                "/v1/teams/stats",
-                stats="season",
-                group="hitting",
-                season=stat_season,
-                sportIds=sport_id_for(season),
-                leagueIds=LEAGUE_ID,
-            )["stats"][0]["splits"]
-            total += float(pd.Series([s["stat"]["gamesPlayed"] for s in splits]).median())
-        known[season] = total
+            splits = _splits(
+                get(
+                    "/v1/teams/stats",
+                    stats="season",
+                    group="hitting",
+                    season=stat_season,
+                    sportIds=sport_id_for(season),
+                    leagueIds=LEAGUE_ID,
+                )
+            )
+            if splits:
+                total += float(pd.Series([s["stat"]["gamesPlayed"] for s in splits]).median())
+        if total:  # an open season with no games yet is left out
+            known[season] = total
     PROSPECTS_DIR.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"season": list(known), "games": list(known.values())}).to_parquet(TEAM_GAMES_PATH, index=False)
     return pd.Series(known).sort_index()

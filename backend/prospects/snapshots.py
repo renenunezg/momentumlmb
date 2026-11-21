@@ -93,6 +93,9 @@ def build(
         win = win[win.player.isin(eligible)]
         if win.empty:
             continue
+        # Team and level come from every line this season, in either role, so a player whose season was all
+        # in his other role (a hitter converting to pitching) still has them.
+        here_any = win[win.season == s]
         win["wopp"] = win.w * win.opp
         role_opp = win.pivot_table(index="player", columns="group", values="wopp", aggfunc="sum", fill_value=0)
         role_opp = role_opp.reindex(columns=["hitting", "pitching"], fill_value=0)
@@ -124,8 +127,10 @@ def build(
         feat["catcher"] = pos.eq("C").astype(float).to_numpy()
         feat["premium"] = pos.isin(PREMIUM_POSITIONS).astype(float).to_numpy()
         feat["lefty"] = bio.throws.reindex(feat.index).eq("L").astype(float).to_numpy()
-        feat["team"] = cur.sort_values("opp").groupby("player").team.last().reindex(feat.index)
-        feat["source_now"] = cur.groupby("player").source.agg(lambda x: "+".join(sorted(set(x)))).reindex(feat.index)
+        feat["team"] = here_any.sort_values("opp").groupby("player").team.last().reindex(feat.index)
+        feat["source_now"] = (
+            here_any.groupby("player").source.agg(lambda x: "+".join(sorted(set(x)))).reindex(feat.index)
+        )
         rows.append(feat.reset_index(names="player"))
     snaps = pd.concat(rows, ignore_index=True)
     return _attach_outcomes(snaps, regulars, debut_year, played_lmb)
