@@ -46,3 +46,10 @@ jobs:
         run: poetry run python -m backend score
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Its own step after scoring: a playoff-odds failure never blocks the
+      # day's game forecasts, and a scoring failure does not skip the odds.
+      - name: Playoff odds
+        if: ${{ !cancelled() }}
+        run: poetry run python -m backend playoffs --publish
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
