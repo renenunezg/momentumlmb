@@ -15,7 +15,11 @@ from backend.prospects import evaluate, lines, model, snapshots
 from backend.statsapi.client import get
 
 MODEL_VERSION = "lmb-prospects-v1"
-PUBLISHED_ROLES: tuple[str, ...] = ()  # set from the holdout read
+# Holdout read 2026-11-20 (cache/prospects/holdout.json, read once): both roles pass. Hitters (full) log loss
+# .359 vs base rate .477 (interval -.158 to -.077), AUC .833; pitchers (baseline) .315 vs .342 (-.045 to -.010),
+# AUC .749. Levels run high in the independent era: mean p .256 vs .147 observed (hitters), .205 vs .081
+# (pitchers), so p_success ranks well but overstates the chance; the board leads with the rank.
+PUBLISHED_ROLES: tuple[str, ...] = ("H", "P")
 COLUMNS = [
     "snapshot_season", "player_id", "name", "role", "age", "team_id", "team", "level", "mexican_born",
     "p_success", "role_rank", "model_version", "scored_at",
