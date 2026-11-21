@@ -122,6 +122,7 @@ def _model_dict(m: G.GradeModel) -> dict:
         "hitter_coef": m.hitter_coef,
         "pitcher_coef": m.pitcher_coef,
         "shrink": {k: round(v, 1) for k, v in m.shrink.items()},
+        "talent_sd": {k: round(v, 4) for k, v in m.talent_sd.items()},
     }
 
 

@@ -41,6 +41,7 @@ class GradeModel:
     hitter_coef: dict[str, float]
     pitcher_coef: dict[str, float]
     shrink: dict[str, float]  # Marcel regression, PA or BF of average added
+    talent_sd: dict[str, float]  # true-talent spread of the rate (year-to-year covariance)
 
 
 def _marcel(history: pd.DataFrame, target: int, value: str, n: str, k: float) -> pd.DataFrame:
@@ -51,6 +52,28 @@ def _marcel(history: pd.DataFrame, target: int, value: str, n: str, k: float) ->
     )
     agg = rows.assign(wv=w * rows[value], wn=w * rows[n]).groupby("player")[["wv", "wn"]].sum()
     return (agg["wv"] / (agg["wn"] + k)).rename(f"{value}_marcel").reset_index()
+
+
+def _weighted_n(history: pd.DataFrame, target: int, n: str) -> pd.Series:
+    """The Marcel weighted sample in units of the latest season (weights 5/4/3 over 5)."""
+    rows = history[(history["season"] < target) & (history["season"] >= target - 3)]
+    w = rows["season"].map(dict(zip((target - 1, target - 2, target - 3), MARCEL_WEIGHTS)))
+    return (w * rows[n]).groupby(rows["player"]).sum() / MARCEL_WEIGHTS[0]
+
+
+def talent_sd(history: pd.DataFrame, value: str, n: str, min_n: float = 200) -> float:
+    """Spread of true talent in the rate: the covariance of a player's rates in
+    consecutive seasons (noise does not carry over, talent does)."""
+    a = history[history[n] >= min_n].assign(rate=lambda d: d[value] / d[n])[["season", "player", "rate"]]
+    m = a.merge(a.assign(season=a["season"] - 1), on=["season", "player"], suffixes=("_0", "_1"))
+    return float(np.sqrt(max(np.cov(m["rate_0"], m["rate_1"])[0, 1], 0.0)))
+
+
+def _talent_band(sd: float, k: float, weighted_n: pd.Series) -> np.ndarray:
+    """Standard deviation of true talent left after a Marcel average on
+    `weighted_n` with regression k: sd * sqrt(k / (n + k))."""
+    n = weighted_n.fillna(0.0).to_numpy(dtype=float)
+    return sd * np.sqrt(k / (n + k))
 
 
 def fit_shrink(history: pd.DataFrame, value: str, n: str, targets: list[int], min_n: float) -> float:
@@ -138,6 +161,12 @@ def features(
             on="player",
             how="left",
         )
+    )
+    hitters = hitters.merge(
+        _weighted_n(history, target, "pa").rename("hit_wn"), left_on="player", right_index=True, how="left"
+    )
+    pitchers = pitchers.merge(
+        _weighted_n(history, target, "bf").rename("pitch_wn"), left_on="player", right_index=True, how="left"
     )
     pitchers["role"] = np.where(pitchers["sp_bf"] >= pitchers["rp_bf"], "SP", "RP")
     age_t = ages[ages["season"] == target - 1][["player", "age"]].assign(age=lambda d: d["age"].astype("Float64"))
@@ -244,6 +273,7 @@ def fit_model(
         hitter_coef=fit_blend(hits, "blend_target", "target_pa", HITTER_FEATURES),
         pitcher_coef=fit_blend(pits, "blend_target", "target_bf", PITCHER_FEATURES),
         shrink=shrink,
+        talent_sd={"hit": talent_sd(history, "hit_raa", "pa"), "pitch": talent_sd(history, "pitch_raa", "bf")},
     )
     return model, hits, pits
 
@@ -277,7 +307,7 @@ def score_grades(
     p = p[p["prior_bf"] >= MIN_PRIOR].copy()
 
     h["full"] = (h["proj_rate"] - repl["hitter"]) * FULL_PA
-    h["full_sd"] = abs(model.hitter_coef["bat_post"]) * h["bat_post_sd"].fillna(h["bat_post_sd"].max()) * FULL_PA
+    h["full_sd"] = _talent_band(model.talent_sd["hit"], model.shrink["hit"], h["hit_wn"]) * FULL_PA
     h["group"] = h["pos"].fillna("DH")
     h = h.merge(
         _projected_time(history, target, "pa", PT_BASE["hitter"]), left_on="player", right_index=True, how="left"
@@ -288,7 +318,7 @@ def score_grades(
     full_bf = np.where(p["role"] == "SP", FULL_BF_SP, FULL_BF_RP)
     repl_rate = np.where(p["role"] == "SP", repl["starter"], repl["reliever"])
     p["full"] = (p["proj_rate"] - repl_rate) * full_bf
-    p["full_sd"] = abs(model.pitcher_coef["pitch_post"]) * p["pitch_post_sd"].fillna(p["pitch_post_sd"].max()) * full_bf
+    p["full_sd"] = _talent_band(model.talent_sd["pitch"], model.shrink["pitch"], p["pitch_wn"]) * full_bf
     p["group"] = p["role"]
     pt = pd.concat(
         [
