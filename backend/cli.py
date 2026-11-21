@@ -42,6 +42,8 @@ def main() -> None:
         pipeline.nightly(day)
     elif args.command == "playoffs":
         rows = pipeline.playoff_odds(day, write=args.publish)
+        if not rows:
+            return
         header = ("team", "zone", "W-L", "proj", "playoffs", "zone ser", "zone fin", "final", "title")
         print("{:5}{:6} {:>7} {:>11} {:>9} {:>9} {:>9} {:>7} {:>7}".format(*header))
         for r in sorted(rows, key=lambda r: (r["zone"], -r["p_playoffs"], -r["p_champion"])):

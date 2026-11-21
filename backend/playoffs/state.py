@@ -23,8 +23,17 @@ def zones(season: int) -> pd.Series:
     frame = pd.read_csv(STATIC_DIR / "zones.csv")
     frame = frame[frame.season == season]
     if frame.empty:
-        raise ValueError(f"No zones for {season} in zones.csv")
+        raise ValueError(f"No zones for {season} in zones.csv: add the season's Norte/Sur teams (Stats API standings)")
     return frame.set_index("team_id").zone.sort_index()
+
+
+def title_decided_on(games: pd.DataFrame, season: int) -> date | None:
+    """Date of the game that won the Serie del Rey, or None while it is open."""
+    final = games[(games.season == season) & (games.game_type == "W") & games.status.isin(PLAYED)]
+    final = final.sort_values("start_time_utc")
+    winners = np.where(final.home_score > final.away_score, final.home_team_id, final.away_team_id)
+    clinched = pd.Series(winners).groupby(winners).cumcount().to_numpy() + 1 >= 4
+    return final.official_date.iloc[clinched.argmax()] if clinched.any() else None
 
 
 @dataclass(frozen=True)

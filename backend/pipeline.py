@@ -68,9 +68,13 @@ def playoff_odds(day: date, write: bool) -> list[dict]:
     last season's cached games; written to lmb.playoff_odds only with `write`."""
     import pandas as pd
 
-    from backend.playoffs.forecast import odds_rows
+    from backend.playoffs.forecast import odds_rows, skip_reason
 
     current = fetch_games(date(day.year, 3, 1), date(day.year, 10, 31))
+    reason = skip_reason(current, day)
+    if reason:
+        print(f"{day}: no playoff odds, {reason}")
+        return []
     games = pd.concat([load_games([day.year - 1]), current], ignore_index=True)
     rows = odds_rows(games, day)
     if write:
