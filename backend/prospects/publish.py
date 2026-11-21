@@ -3,7 +3,12 @@
 The board season is the latest finished summer (LMB and minor leagues); the
 LMP winter that starts that autumn counts as it stands. Each role's model is
 the spec chosen on validation, fitted on every matured snapshot, and a role is
-written only if it passed the holdout rule (PUBLISHED_ROLES)."""
+written only if it passed the holdout rule (PUBLISHED_ROLES).
+
+The board is ranks only: role_rank orders each role. The model output is kept
+as raw_score for context and is not a calibrated chance (see PUBLISHED_ROLES);
+it is never to be shown as a probability, and it is not recalibrated on the
+2021-2022 holdout cohorts."""
 
 from datetime import UTC, date, datetime
 
@@ -18,11 +23,11 @@ MODEL_VERSION = "lmb-prospects-v1"
 # Holdout read 2026-11-20 (cache/prospects/holdout.json, read once): both roles pass. Hitters (full) log loss
 # .359 vs base rate .477 (interval -.158 to -.077), AUC .833; pitchers (baseline) .315 vs .342 (-.045 to -.010),
 # AUC .749. Levels run high in the independent era: mean p .256 vs .147 observed (hitters), .205 vs .081
-# (pitchers), so p_success ranks well but overstates the chance; the board leads with the rank.
+# (pitchers), so the output ranks well but overstates the chance: the board shows ranks only.
 PUBLISHED_ROLES: tuple[str, ...] = ("H", "P")
 COLUMNS = [
     "snapshot_season", "player_id", "name", "role", "age", "team_id", "team", "level", "mexican_born",
-    "p_success", "role_rank", "model_version", "scored_at",
+    "role_rank", "raw_score", "model_version", "scored_at",
 ]  # fmt: skip
 
 
@@ -48,14 +53,14 @@ def score(today: date) -> pd.DataFrame:
         part = snaps[snaps.role == role]
         fitted = model.fit(part[part.success.notna()], evaluate.features_for(role, evaluate.CHOICE[role]))
         now = part[part.season == season].copy()
-        now["p_success"] = fitted.predict(now)
+        now["raw_score"] = fitted.predict(now)
         board.append(now)
     if not board:
         raise RuntimeError("No prospect role passed the holdout rule; nothing to score")
     out = pd.concat(board, ignore_index=True)
     names = people.set_index("player").full_name
     teams = _team_names(out.team)
-    out["role_rank"] = out.groupby("role").p_success.rank(ascending=False, method="first").astype(int)
+    out["role_rank"] = out.groupby("role").raw_score.rank(ascending=False, method="first").astype(int)
     scored_at = datetime.now(UTC)
     return pd.DataFrame(
         {
@@ -68,7 +73,7 @@ def score(today: date) -> pd.DataFrame:
             "team": out.team.map(lambda t: teams.get(int(t)) if pd.notna(t) else None),
             "level": out.source_now,
             "mexican_born": out.mexican.astype(bool),
-            "p_success": out.p_success.round(4),
+            "raw_score": out.raw_score.round(4),
             "role_rank": out.role_rank,
             "model_version": MODEL_VERSION,
             "scored_at": scored_at,

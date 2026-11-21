@@ -70,7 +70,7 @@ def _prospects(action: str, day: date, write: bool) -> None:
     else:
         board = publish.score(day)
         for role, part in board.groupby("role"):
-            print(part.head(15)[["role_rank", "name", "age", "team", "level", "p_success"]].to_string(index=False))
+            print(part.head(15)[["role", "role_rank", "name", "age", "team", "level"]].to_string(index=False))
         print(f"{len(board)} prospects scored for {board.snapshot_season.iloc[0]}")
         if write:
             publish.write(board)
