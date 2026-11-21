@@ -1,4 +1,4 @@
-"""Production commands: train, score, nightly, and the no-write replay."""
+"""Production commands: train, score, nightly, playoff odds, and the no-write replay."""
 
 import shutil
 from datetime import UTC, date, datetime, timedelta
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from backend import strategy
 from backend.config import ARTIFACTS_DIR
-from backend.etl.games import build_games_cache, fetch_games
+from backend.etl.games import build_games_cache, fetch_games, load_games
 from backend.etl.pa_frame import build_pa_cache, load_pa
 from backend.etl.workload import build_workload_cache
 from backend.scoring import CURRENT_BUNDLE, score
@@ -61,6 +61,23 @@ def nightly(day: date) -> None:
     update_caches(day)
     publish.upsert_games(fetch_games(day - timedelta(days=3), day))
     evaluate(day - timedelta(days=1))
+
+
+def playoff_odds(day: date, write: bool) -> list[dict]:
+    """The morning-of-`day` playoff odds from this season's live schedule and
+    last season's cached games; written to lmb.playoff_odds only with `write`."""
+    import pandas as pd
+
+    from backend.playoffs.forecast import odds_rows
+
+    current = fetch_games(date(day.year, 3, 1), date(day.year, 10, 31))
+    games = pd.concat([load_games([day.year - 1]), current], ignore_index=True)
+    rows = odds_rows(games, day)
+    if write:
+        from backend import publish
+
+        print(f"{day}: {publish.publish_playoff_odds(rows)} playoff odds rows written")
+    return rows
 
 
 def replay(day: date, bundle: Path) -> list[dict]:

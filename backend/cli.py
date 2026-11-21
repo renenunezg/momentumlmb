@@ -23,6 +23,9 @@ def main() -> None:
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--date", type=date.fromisoformat, default=None)
+    odds = sub.add_parser("playoffs", help="playoff odds on the morning of the date (no writes without --publish)")
+    odds.add_argument("--date", type=date.fromisoformat, default=None)
+    odds.add_argument("--publish", action="store_true")
     replay = sub.add_parser("replay", help="score a past date with no database writes")
     replay.add_argument("--date", type=date.fromisoformat, required=True)
     replay.add_argument("--bundle", type=Path, required=True)
@@ -37,6 +40,18 @@ def main() -> None:
         pipeline.score_and_publish(day)
     elif args.command == "nightly":
         pipeline.nightly(day)
+    elif args.command == "playoffs":
+        rows = pipeline.playoff_odds(day, write=args.publish)
+        header = ("team", "zone", "W-L", "proj", "playoffs", "zone ser", "zone fin", "final", "title")
+        print("{:5}{:6} {:>7} {:>11} {:>9} {:>9} {:>9} {:>7} {:>7}".format(*header))
+        for r in sorted(rows, key=lambda r: (r["zone"], -r["p_playoffs"], -r["p_champion"])):
+            print(
+                f"{r['team']:5}{r['zone']:6} {r['wins']:>3}-{r['losses']:<3} {r['proj_wins']:>5}-{r['proj_losses']:<5}"
+                + "".join(f"{r[c] / 100:>8.1f}%" for c in ("p_playoffs", "p_zone_series", "p_zone_final"))
+                + "".join(f"{r[c] / 100:>6.1f}%" for c in ("p_final", "p_champion"))
+            )
+        if not args.publish:
+            print(f"{len(rows)} teams, no database writes")
     elif args.command == "replay":
         rows = pipeline.replay(day, args.bundle)
         for r in rows:

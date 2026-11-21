@@ -209,3 +209,32 @@ def publish(rows: list[dict]) -> int:
                     payload,
                 )
     return len(payload)
+
+
+PLAYOFF_COLUMNS = [
+    "season", "as_of", "team", "zone", "wins", "losses", "proj_wins", "proj_losses",
+    "p_playoffs", "p_zone_series", "p_zone_final", "p_final", "p_champion",
+]  # fmt: skip
+
+
+def publish_playoff_odds(rows: list[dict]) -> int:
+    """Upsert one date's playoff odds (one row per team). A rerun with the same
+    results is identical and writes nothing. Returns the number of rows written."""
+    if not rows:
+        return 0
+    columns = ", ".join(PLAYOFF_COLUMNS)
+    values = ", ".join(f":{c}" for c in PLAYOFF_COLUMNS)
+    data = [c for c in PLAYOFF_COLUMNS if c not in ("season", "as_of", "team")]
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in data)
+    stored = ", ".join(f"lmb.playoff_odds.{c}" for c in data)
+    incoming = ", ".join(f"EXCLUDED.{c}" for c in data)
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            text(
+                f"INSERT INTO lmb.playoff_odds ({columns}) VALUES ({values}) "
+                f"ON CONFLICT (season, as_of, team) DO UPDATE SET {updates} "
+                f"WHERE ({stored}) IS DISTINCT FROM ({incoming})"
+            ),
+            [{c: r[c] for c in PLAYOFF_COLUMNS} for r in rows],
+        )
+    return result.rowcount
