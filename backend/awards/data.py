@@ -56,11 +56,11 @@ def _sport(key: str) -> int:
     return 23 if int(key[:4]) >= 2021 else 11
 
 
-def _cached(name: str, path: str, **params) -> dict:
+def _cached(name: str, path: str, refresh: bool = False, **params) -> dict:
     """Finished seasons never change, so a response is kept for good; the board's own
-    season is refetched only when its cache file is deleted."""
+    season is refetched only when its cache file is deleted or `refresh` is set."""
     target = CACHE / f"{name}.json"
-    if target.exists():
+    if target.exists() and not refresh:
         return json.loads(target.read_text())
     payload = get(path, **params)
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -180,10 +180,14 @@ def people(ids: list[int]) -> pd.DataFrame:
     )
 
 
-def recipients(award: str) -> pd.DataFrame:
+def recipients(award: str, refresh: bool = False) -> pd.DataFrame:
     """Every listed winner of one award, with the season he won it. Two 2022 winners are filed
-    under season "2002"; their award date gives the real year."""
-    payload = _cached(f"recipients_{AWARD_CODES[award]}", f"/v1/awards/{AWARD_CODES[award]}/recipients")
+    under season "2002"; their award date gives the real year. Boards read the cached list (their
+    training years only); the grader refreshes it, since a list cached before an announcement
+    never shows that season's winners."""
+    payload = _cached(
+        f"recipients_{AWARD_CODES[award]}", f"/v1/awards/{AWARD_CODES[award]}/recipients", refresh=refresh
+    )
     rows = []
     for a in payload["awards"]:
         year = int(a["season"])

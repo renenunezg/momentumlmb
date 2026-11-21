@@ -139,7 +139,7 @@ def publish(season: int, after_announcement: bool) -> None:
                 "win_probability, stat_line) VALUES (:season, :award, :player_id, :player_name, :team, "
                 ":rank, :win_probability, :stat_line)"
             ),
-            rows.to_dict("records"),
+            [{k: None if pd.isna(v) else v for k, v in row.items()} for row in rows.to_dict("records")],
         )
     print(f"Published {len(rows)} board rows for {season}")
 
@@ -152,7 +152,7 @@ def grade(season: int) -> None:
 
     with get_engine().begin() as conn:
         for award in features.FEATURES:
-            winners = data.recipients(award)
+            winners = data.recipients(award, refresh=True)
             winners = winners[winners.year.eq(season)]
             if winners.empty:
                 print(f"{award} {season}: no winner listed yet, skipped")
