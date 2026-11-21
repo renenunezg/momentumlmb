@@ -29,6 +29,7 @@ ALTER TABLE lmb.prospects ENABLE ROW LEVEL SECURITY;
 CREATE POLICY public_read ON lmb.prospects FOR SELECT TO anon, authenticated USING (true);
 GRANT SELECT ON lmb.prospects TO anon, authenticated;
 GRANT ALL ON lmb.prospects TO service_role;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON lmb.prospects FROM anon, authenticated;
 
 -- The cached prospects page revalidates when the board changes, as for the other lmb tables.
 CREATE TRIGGER site_revalidate AFTER INSERT OR DELETE OR UPDATE OR TRUNCATE ON lmb.prospects
