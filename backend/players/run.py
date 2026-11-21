@@ -126,11 +126,14 @@ def _model_dict(m: G.GradeModel) -> dict:
     }
 
 
-def _holdout_read(b: WarBuild, ages: pd.DataFrame, model: G.GradeModel) -> dict:
+def _holdout_read(b_dev: WarBuild, b: WarBuild, ages: pd.DataFrame, model: G.GradeModel) -> dict:
     """The one read of the 2026 holdout: grades scored on 2026's opening day
-    with the development model, against 2026's actual rates."""
+    with the development model, against 2026's actual rates. The features come
+    from the development build (park context fitted through 2025), so nothing
+    from 2026 reaches them; only the 2026 target rates come from the full build."""
     t = HOLDOUT_SEASON
-    h, p = G.target_rows(t, b.players, ages, model.shrink, b.seasons.lw.loc[t - 1])
+    history = pd.concat([b_dev.players, b.players[b.players["season"] == t]], ignore_index=True)
+    h, p = G.target_rows(t, history, ages, model.shrink, b_dev.seasons.lw.loc[t - 1])
     h, p = G.project(h, p, model)
     cols_h = ["proj_rate", "marcel_rate", "prior_rate", "bat_post"]
     cols_p = ["proj_rate", "marcel_rate", "prior_rate", "pitch_post"]
@@ -152,7 +155,7 @@ def build() -> dict:
         "model_version": MODEL_VERSION,
         "pitching_variant": variant,
         "grade_model": _model_dict(model),
-        "holdout_2026_grade": _holdout_read(b, ages, model),
+        "holdout_2026_grade": _holdout_read(b_dev, b, ages, model),
         "war_2021_2026": _war_validation(b, ALL),
     }
     last = HOLDOUT_SEASON

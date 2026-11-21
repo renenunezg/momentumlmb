@@ -1,6 +1,8 @@
 -- LMB player ratings in wins (backend/players). Latest season only: one row
 -- per player who played it, with the WAR ledger and the forward grade for the
--- next season. About 1,000 rows (~0.16 MB with its index). History stays in
+-- next season. About 1,000 rows: 0.33 MB measured with its index on a scratch
+-- database right after a republish (the replaced rows wait for autovacuum),
+-- about half that once vacuumed. History stays in
 -- the local parquet build. Portraits come from the site's lmbPlayerHeadshotUrl
 -- by player_id, so no image column.
 CREATE TABLE lmb.player_ratings (

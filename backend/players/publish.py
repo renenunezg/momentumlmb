@@ -1,6 +1,7 @@
 """Rows for lmb.player_ratings and lmb.player_rating_model, and the publish.
 
-The table holds the latest season only (about 1,000 rows, ~0.16 MB). Writes go
+The table holds the latest season only (about 1,000 rows; 0.33 MB measured
+right after a republish, before autovacuum reclaims the replaced rows). Writes go
 through backend.db, which refuses them locally unless MOMENTUMLMB_DB_WRITES=1."""
 
 import json
@@ -81,16 +82,23 @@ def size_estimate(rows: pd.DataFrame, model_details: dict) -> dict:
 
 
 def publish(rows: pd.DataFrame, season: int, model_version: str, details: dict) -> None:
+    """Replace the table in one transaction. All rows go in one INSERT ...
+    SELECT FROM json_populate_recordset statement, so the statement-level
+    site_revalidate trigger fires once, not once per row."""
     from sqlalchemy import text
 
     from backend.db import get_engine
 
-    records = rows.astype(object).where(rows.notna(), None).to_dict("records")
     cols = ", ".join(RATING_COLUMNS)
-    params = ", ".join(f":{c}" for c in RATING_COLUMNS)
     with get_engine().begin() as conn:
         conn.execute(text("DELETE FROM lmb.player_ratings"))
-        conn.execute(text(f"INSERT INTO lmb.player_ratings ({cols}) VALUES ({params})"), records)
+        conn.execute(
+            text(
+                f"INSERT INTO lmb.player_ratings ({cols}) "
+                f"SELECT {cols} FROM json_populate_recordset(NULL::lmb.player_ratings, CAST(:rows AS json))"
+            ),
+            {"rows": rows.to_json(orient="records", force_ascii=False)},
+        )
         conn.execute(
             text(
                 "INSERT INTO lmb.player_rating_model (id, season, model_version, details, updated_at) "
