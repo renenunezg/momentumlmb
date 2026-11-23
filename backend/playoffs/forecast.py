@@ -15,21 +15,28 @@ N_SIMS = 20_000
 
 
 def skip_reason(games: pd.DataFrame, day: date) -> str | None:
-    """Why `day` gets no odds, or None. Outside the season the odds would not
-    move, so nothing is written before opening day or after the morning after
-    the title is decided. A season with a schedule but no zones raises."""
+    """Why `day`, on or after opening day, gets no odds, or None. After the
+    season the odds would not move, so nothing is written past the morning
+    after the title is decided. A season with a schedule but no zones raises."""
     season = day.year
     schedule = games[games.season == season]
     if schedule.empty:
         return f"no {season} schedule yet"
     zones(season)
-    opening = schedule[schedule.game_type == "R"].official_date.min()
-    if day < opening:
-        return f"the {season} season opens {opening}"
     decided = title_decided_on(schedule, season)
     if decided is not None and day > decided + timedelta(days=1):
         return f"the {season} title was decided on {decided}"
     return None
+
+
+def preseason_schedule(last: pd.DataFrame, season: int, opening: date) -> pd.DataFrame:
+    """`season`'s regular season on last season's schedule, for preseason odds
+    before the league posts its own: every regular-season game `last` listed
+    (once each, so 93 a team in 2026, cancelled and postponed games included),
+    home and away kept, unplayed and dated opening day."""
+    regular = last[last.game_type == "R"].drop_duplicates("game_pk")
+    unplayed = {"status": "Scheduled", "home_score": np.nan, "away_score": np.nan}
+    return regular.assign(season=season, official_date=opening, **unplayed)
 
 
 def odds_rows(games: pd.DataFrame, day: date, n_sims: int = N_SIMS) -> list[dict]:

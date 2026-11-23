@@ -1,6 +1,7 @@
 """LMB identity in the MLB Stats API."""
 
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 
@@ -19,6 +20,16 @@ def sport_id_for(season: int) -> int:
     if season < 2005:
         raise ValueError("The Stats API has no LMB data before 2005")
     return 11 if season <= 2019 else 23
+
+
+def regular_season_start(season: int) -> date:
+    """The league's announced opening day, posted before its schedule."""
+    from backend.statsapi.client import get
+
+    seasons = get(f"/v1/seasons/{season}", sportId=sport_id_for(season)).get("seasons", [])
+    if not seasons or "regularSeasonStartDate" not in seasons[0]:
+        raise ValueError(f"The Stats API has no {season} season dates yet")
+    return date.fromisoformat(seasons[0]["regularSeasonStartDate"])
 
 
 @dataclass(frozen=True)

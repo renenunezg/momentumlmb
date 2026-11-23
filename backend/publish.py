@@ -219,11 +219,12 @@ PLAYOFF_COLUMNS = [
 
 def publish_playoff_odds(rows: list[dict]) -> int:
     """Upsert one date's playoff odds (one row per team). A rerun with the same
-    results is identical and writes nothing. Returns the number of rows written."""
+    results is identical and writes nothing. The rows go in one INSERT ...
+    SELECT FROM json_populate_recordset statement, so the statement-level
+    site_revalidate trigger fires once. Returns the number of rows written."""
     if not rows:
         return 0
     columns = ", ".join(PLAYOFF_COLUMNS)
-    values = ", ".join(f":{c}" for c in PLAYOFF_COLUMNS)
     data = [c for c in PLAYOFF_COLUMNS if c not in ("season", "as_of", "team")]
     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in data)
     stored = ", ".join(f"lmb.playoff_odds.{c}" for c in data)
@@ -231,10 +232,11 @@ def publish_playoff_odds(rows: list[dict]) -> int:
     with get_engine().begin() as conn:
         result = conn.execute(
             text(
-                f"INSERT INTO lmb.playoff_odds ({columns}) VALUES ({values}) "
+                f"INSERT INTO lmb.playoff_odds ({columns}) "
+                f"SELECT {columns} FROM json_populate_recordset(NULL::lmb.playoff_odds, CAST(:rows AS json)) "
                 f"ON CONFLICT (season, as_of, team) DO UPDATE SET {updates} "
                 f"WHERE ({stored}) IS DISTINCT FROM ({incoming})"
             ),
-            [{c: r[c] for c in PLAYOFF_COLUMNS} for r in rows],
+            {"rows": json.dumps([{c: r[c] for c in PLAYOFF_COLUMNS} for r in rows], default=str)},
         )
     return result.rowcount

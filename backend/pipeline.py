@@ -63,20 +63,32 @@ def nightly(day: date) -> None:
     evaluate(day - timedelta(days=1))
 
 
-def playoff_odds(day: date, write: bool) -> list[dict]:
-    """The morning-of-`day` playoff odds from this season's live schedule and
-    last season's cached games; written to lmb.playoff_odds only with `write`."""
+def playoff_odds(day: date, write: bool, season: int | None = None) -> list[dict]:
+    """The morning-of-`day` playoff odds for `season` (default: day's year)
+    from its live schedule and last season's cached games; written to
+    lmb.playoff_odds only with `write`. Before opening day they are the
+    preseason odds, stored as the morning of opening day so every preseason
+    run upserts one snapshot, on last season's schedule until the league posts
+    its own."""
     import pandas as pd
 
-    from backend.playoffs.forecast import odds_rows, skip_reason
+    from backend.playoffs.forecast import odds_rows, preseason_schedule, skip_reason
+    from backend.statsapi.league import regular_season_start
 
-    current = fetch_games(date(day.year, 3, 1), date(day.year, 10, 31))
-    reason = skip_reason(current, day)
-    if reason:
+    season = season or day.year
+    last = load_games([season - 1])
+    current = fetch_games(date(season, 3, 1), date(season, 10, 31))
+    regular = current[current.game_type == "R"]
+    opening = regular.official_date.min() if not regular.empty else regular_season_start(season)
+    if day < opening:
+        if regular.empty:
+            print(f"{season}: no schedule posted, preseason odds on the {season - 1} schedule")
+            current = preseason_schedule(last, season, opening)
+        day = opening
+    elif reason := skip_reason(current, day):
         print(f"{day}: no playoff odds, {reason}")
         return []
-    games = pd.concat([load_games([day.year - 1]), current], ignore_index=True)
-    rows = odds_rows(games, day)
+    rows = odds_rows(pd.concat([last, current], ignore_index=True), day)
     if write:
         from backend import publish
 

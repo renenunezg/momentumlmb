@@ -25,6 +25,7 @@ def main() -> None:
         p.add_argument("--date", type=date.fromisoformat, default=None)
     odds = sub.add_parser("playoffs", help="playoff odds on the morning of the date (no writes without --publish)")
     odds.add_argument("--date", type=date.fromisoformat, default=None)
+    odds.add_argument("--season", type=int, default=None, help="default: the date's year")
     odds.add_argument("--publish", action="store_true")
     replay = sub.add_parser("replay", help="score a past date with no database writes")
     replay.add_argument("--date", type=date.fromisoformat, required=True)
@@ -49,7 +50,7 @@ def main() -> None:
     elif args.command == "nightly":
         pipeline.nightly(day)
     elif args.command == "playoffs":
-        rows = pipeline.playoff_odds(day, write=args.publish)
+        rows = pipeline.playoff_odds(day, write=args.publish, season=args.season)
         if not rows:
             return
         header = ("team", "zone", "W-L", "proj", "playoffs", "zone ser", "zone fin", "final", "title")
