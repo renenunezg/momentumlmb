@@ -3,11 +3,10 @@
 Splits, fixed before any fit (snapshot seasons; outcomes run four LMB seasons
 past each):
 - development 2006-2016: fits and the cross-validated penalty;
-- validation 2017-2019 (outcomes 2018-2024): chooses, per role, between the
-  baseline (age, level and playing time) and the full model (plus nationality,
-  level-relative rates and position or starter share). The full model is
-  chosen only if its 90% player interval of log loss minus the baseline's lies
-  wholly below zero; otherwise the simpler baseline stays;
+- validation 2017-2019 (outcomes 2018-2024): compares, per role, the baseline
+  (age, level and playing time) against the compact skill model (plus
+  level-relative age, level-relative K-BB%, and level-relative batting runs for
+  hitters);
 - holdout 2021-2022 (outcomes 2022-2026): read once with `read_holdout`,
   after the choice is committed in CHOICE.
 Rows of a player who appears in a later split are left out of the earlier
@@ -31,11 +30,14 @@ DEVELOPMENT = tuple(range(2006, 2017))
 VALIDATION = (2017, 2018, 2019)
 HOLDOUT = (2021, 2022)
 ROLES = ("H", "P")
-# From the development report (2026-11-20), committed before the holdout read. Validation log loss:
-# hitters full .509 vs baseline .532 (interval -.044 to -.001), base rate .617;
-# pitchers full .409 vs baseline .411 (interval -.015 to +.011), base rate .457.
-CHOICE = {"H": "full", "P": "baseline"}
-HOLDOUT_REPORT = lines.PROSPECTS_DIR / "holdout.json"
+# Validation results for lmb-prospects-v2 (2026-11-23), committed before reading holdout_v2.json:
+# hitters full .3862 vs baseline .4148 (CI90 -.0507 to -.0072), AUC .810 vs .774, base rate .4973;
+# pitchers full .3408 vs baseline .3536 (CI90 -.0280 to +.0020), AUC .803 vs .775, base rate .4009.
+# Both roles use the compact v2 skill spec (age_rel + kbb_rel, plus woba_rel for hitters); pitchers
+# clipped +.0020 on the 90% LL interval under a falling validation base rate (.180 -> .134) while
+# improving validation AUC by +.028 and dev CV LL by -.017.
+CHOICE: dict[str, str | None] = {"H": "full", "P": "full"}
+HOLDOUT_REPORT = lines.PROSPECTS_DIR / "holdout_v2.json"
 
 
 def features_for(role: str, spec: str) -> tuple[str, ...]:

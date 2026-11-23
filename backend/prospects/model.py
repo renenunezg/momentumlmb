@@ -29,6 +29,11 @@ class Logit:
         x = (frame[list(self.features)].to_numpy(dtype=float) - self.mean) / self.scale
         return 1.0 / (1.0 + np.exp(-(self.weights[0] + x @ self.weights[1:])))
 
+    def contributions(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Per-feature standardized log-odds shifts relative to the training mean."""
+        x = (frame[list(self.features)].to_numpy(dtype=float) - self.mean) / self.scale
+        return pd.DataFrame(x * self.weights[1:], index=frame.index, columns=list(self.features))
+
     def to_dict(self) -> dict:
         return {
             "features": list(self.features),
