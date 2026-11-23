@@ -21,8 +21,9 @@ cache/
 artifacts/
 .superpowers/
 
-# Local design docs (never tracked)
+# Local design docs and research notes (never tracked)
 docs/superpowers/
+docs/research/
 
 # OS
 .DS_Store
